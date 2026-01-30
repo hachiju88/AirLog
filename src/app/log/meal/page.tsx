@@ -1,0 +1,592 @@
+'use client';
+
+import { useState, useRef, useEffect } from 'react';
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, Camera, Mic, Type, Upload, Check, X, Trash2, Plus, StopCircle, ChevronLeft, Utensils } from "lucide-react";
+import { useRouter, useSearchParams } from 'next/navigation';
+import Image from 'next/image';
+import { createClient } from "@/lib/supabase/client";
+import { cn, compressImage } from "@/lib/utils";
+import { Slider } from "@/components/ui/slider";
+import { toast } from "sonner";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+type MealItem = {
+    name: string;
+    emoji?: string;
+    calories: number;
+    protein: number;
+    fat: number;
+    carbs: number;
+    fiber: number;
+    salt: number;
+    portion: number;
+};
+
+export default function MealLogPage() {
+    const router = useRouter();
+    const [activeTab, setActiveTab] = useState("photo");
+    const [mealItems, setMealItems] = useState<MealItem[]>([]);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+
+    // Photo State
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [imagePreview, setImagePreview] = useState<string | null>(null);
+
+    // Draft State
+    const [drafts, setDrafts] = useState<any[]>([]);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
+
+    useEffect(() => {
+        const fetchDrafts = async () => {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            const { data: pendingLogs } = await supabase
+                .from('meal_logs')
+                .select('*')
+                .eq('user_id', user.id)
+                .order('recorded_at', { ascending: false });
+
+            if (pendingLogs) {
+                const validDrafts = pendingLogs.filter(log => {
+                    const raw = log.ai_analysis_raw as any;
+                    return raw?.status === 'pending';
+                });
+                setDrafts(validDrafts);
+            }
+        };
+        fetchDrafts();
+    }, []);
+
+    const loadDraft = (draft: any) => {
+        setEditingId(draft.id);
+        setDraftDate(draft.recorded_at); // Keep date
+        const raw = draft.ai_analysis_raw as any;
+        const content = raw?.raw_content || draft.food_name;
+
+        // Push to URL for persistence if page refreshes
+        const params = new URLSearchParams();
+        params.set('draft_id', draft.id);
+        params.set('draft_text', content);
+        params.set('draft_date', draft.recorded_at);
+        params.set('mode', 'voice'); // Always voice/text
+        router.replace(`?${params.toString()}`);
+
+        setActiveTab('voice');
+        setTextInput(content);
+        toast.info('下書きを読み込みました');
+    };
+
+    // Voice State
+    const [isListening, setIsListening] = useState(false);
+    // Removed separate transcript state, using textInput directly
+    // const [transcript, setTranscript] = useState(""); 
+    // const [interimTranscript, setInterimTranscript] = useState("");
+    const recognitionRef = useRef<any>(null);
+
+    // Text State
+    const [textInput, setTextInput] = useState("");
+
+    // Calculate totals
+    const totalCalories = mealItems.reduce((acc, item) => acc + Math.round(item.calories * item.portion), 0);
+    const totalProtein = mealItems.reduce((acc, item) => acc + (item.protein * item.portion), 0);
+    const totalFat = mealItems.reduce((acc, item) => acc + (item.fat * item.portion), 0);
+    const totalCarbs = mealItems.reduce((acc, item) => acc + (item.carbs * item.portion), 0);
+
+    // --- Photo Logic ---
+    const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            try {
+                const compressedDataUrl = await compressImage(file);
+                setImagePreview(compressedDataUrl);
+            } catch (error) {
+                console.error("Image compression failed", error);
+                toast.error("画像の読み込みに失敗しました");
+            }
+        }
+    };
+
+    const analyzePhoto = async () => {
+        if (!imagePreview) return;
+        setIsAnalyzing(true);
+        try {
+            const base64Data = imagePreview.split(',')[1];
+            const response = await fetch('/api/estimate/meal', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: base64Data }),
+            });
+            const data = await response.json();
+
+            if (response.status === 429) {
+                toast.error('AIの利用制限に達しました', {
+                    description: 'しばらく時間を空けてから再試行してください。'
+                });
+                return;
+            }
+
+            if (response.ok && data.items) {
+                const itemsWithPortion = data.items.map((item: any) => ({ ...item, portion: 1.0 }));
+                setMealItems(prev => [...prev, ...itemsWithPortion]);
+                setImagePreview(null); // Clear after success
+                toast.success('写真を解析しました');
+            }
+        } catch (error) {
+            console.error(error);
+            toast.error('解析エラーが発生しました');
+        } finally {
+            setIsAnalyzing(false);
+        }
+    };
+
+    // --- Voice Logic ---
+    useEffect(() => {
+        if (typeof window !== 'undefined' && (window as any).webkitSpeechRecognition) {
+            const SpeechRecognition = (window as any).webkitSpeechRecognition;
+            recognitionRef.current = new SpeechRecognition();
+            recognitionRef.current.continuous = true;
+            recognitionRef.current.interimResults = true;
+            recognitionRef.current.lang = 'ja-JP';
+
+            recognitionRef.current.onresult = (event: any) => {
+                let newFinal = '';
+
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        newFinal += event.results[i][0].transcript;
+                    }
+                }
+
+                if (newFinal) {
+                    setTextInput(prev => prev + newFinal);
+                }
+            };
+        }
+    }, []);
+
+    const toggleListening = () => {
+        if (isListening) {
+            recognitionRef.current?.stop();
+            setIsListening(false);
+        } else {
+            // Do not clear textInput on start, allow appending
+            recognitionRef.current?.start();
+            setIsListening(true);
+        }
+    };
+
+    const saveAsDraft = async (type: 'photo' | 'voice' | 'text', content: string) => {
+        try {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            const record = {
+                user_id: user.id,
+                food_name: type === 'photo' ? "解析待ち (写真)" : content,
+                calories: 0,
+                protein_g: 0,
+                fat_g: 0,
+                carbohydrates_g: 0,
+                fiber_g: 0,
+                salt_g: 0,
+                input_type: type,
+                ai_analysis_raw: { status: 'pending', raw_content: content }
+            };
+
+            await supabase.from('meal_logs').insert([record]);
+            toast.success('下書きとして保存しました', { description: '後で編集できます' });
+            router.push('/dashboard');
+            router.refresh();
+        } catch (e) {
+            console.error(e);
+            toast.error('保存に失敗しました');
+        }
+    };
+
+    const deleteDraft = (e: React.MouseEvent, id: string) => {
+        e.stopPropagation();
+        setDeletingId(id);
+    };
+
+    const executeDeleteDraft = async () => {
+        if (!deletingId) return;
+        const id = deletingId;
+        const supabase = createClient();
+        await supabase.from('meal_logs').delete().eq('id', id);
+        setDrafts(prev => prev.filter(d => d.id !== id));
+        toast.success('下書きを削除しました');
+        setDeletingId(null);
+    };
+
+    const analyzeText = async (text: string) => {
+        if (!text.trim()) return;
+        setIsAnalyzing(true);
+        try {
+            const response = await fetch('/api/estimate/meal/text', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text }),
+            });
+            const data = await response.json();
+
+            if (response.status === 429) {
+                toast.error('AIの利用制限に達しました', {
+                    description: 'しばらく時間を空けてから再試行してください。'
+                });
+                return;
+            }
+
+            if (!response.ok) {
+                toast.error(data.error || '解析に失敗しました');
+                return;
+            }
+
+            if (data.items) {
+                const itemsWithPortion = data.items.map((item: any) => ({ ...item, portion: 1.0 }));
+                setMealItems(prev => [...prev, ...itemsWithPortion]);
+                setTextInput("");
+                toast.success('テキストを解析しました');
+            }
+        } catch (error) {
+            console.error(error);
+            toast.error('通信エラーが発生しました');
+        } finally {
+            setIsAnalyzing(false);
+        }
+    };
+
+    const searchParams = useSearchParams();
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [draftDate, setDraftDate] = useState<string | null>(null);
+
+    useEffect(() => {
+        const draftText = searchParams.get('draft_text');
+        const draftId = searchParams.get('draft_id');
+        const dDate = searchParams.get('draft_date');
+        // const mode = searchParams.get('mode'); // Ignored, always voice/text
+
+        if (draftId) {
+            setEditingId(draftId);
+        }
+        if (dDate) {
+            setDraftDate(dDate);
+        }
+
+        if (draftText) {
+            setActiveTab('voice');
+            setTextInput(draftText);
+        }
+    }, [searchParams]);
+
+    // --- Common Logic ---
+    const updatePortion = (index: number, newPortion: number) => {
+        const newItems = [...mealItems];
+        newItems[index].portion = newPortion;
+        setMealItems(newItems);
+    };
+
+    const removeItem = (index: number) => {
+        const newItems = mealItems.filter((_, i) => i !== index);
+        setMealItems(newItems);
+    };
+
+    const handleSave = async () => {
+        if (mealItems.length === 0) return;
+        setIsSaving(true);
+        try {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            const records = mealItems.map(item => ({
+                user_id: user.id,
+                food_name: item.name,
+                calories: Math.round(item.calories * item.portion),
+                protein_g: Number((item.protein * item.portion).toFixed(1)),
+                fat_g: Number((item.fat * item.portion).toFixed(1)),
+                carbohydrates_g: Number((item.carbs * item.portion).toFixed(1)),
+                fiber_g: Number((item.fiber * item.portion).toFixed(1)),
+                salt_g: Number((item.salt * item.portion).toFixed(1)),
+                input_type: activeTab, // photo, voice, text
+                ai_analysis_raw: item,
+                recorded_at: draftDate || new Date().toISOString() // Use draft date if valid
+            }));
+
+            if (editingId) {
+                // Update existing draft (first item logic, simplified for now)
+                // Note: If analysis returns multiple items, we might need to delete old and insert new, or just update the first one.
+                // For safety/simplicity with multi-item results, we'll DELETE the draft and INSERT new records.
+                await supabase.from('meal_logs').delete().eq('id', editingId);
+                await supabase.from('meal_logs').insert(records);
+            } else {
+                await supabase.from('meal_logs').insert(records);
+            }
+
+            toast.success('食事ログを保存しました');
+            router.push('/dashboard');
+            router.refresh();
+        } catch (e) {
+            console.error(e);
+            toast.error('保存中にエラーが発生しました');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    return (
+        <div className="min-h-screen bg-slate-50 relative pb-safe">
+            <div className="px-6 py-4 bg-rose-50 border-b border-rose-100 shadow-sm flex items-center justify-between sticky top-0 z-10">
+                <Button variant="ghost" size="icon" onClick={() => router.back()} className="-ml-2 hover:bg-rose-100 text-rose-900">
+                    <ChevronLeft className="h-6 w-6" />
+                </Button>
+                <h1 className="font-bold text-xl text-rose-900 flex items-center gap-2">
+                    <Utensils className="h-5 w-5" />
+                    食事を記録
+                </h1>
+                <div className="w-10" />
+            </div>
+
+            <main className="p-4 space-y-6">
+                <Tabs defaultValue="photo" value={activeTab} onValueChange={setActiveTab} className="w-full">
+                    <TabsList className="grid w-full grid-cols-2 mb-4">
+                        <TabsTrigger value="photo"><Camera className="h-4 w-4 mr-2" />写真</TabsTrigger>
+                        <TabsTrigger value="voice"><Mic className="h-4 w-4 mr-2" />音声・テキスト</TabsTrigger>
+                    </TabsList>
+
+                    {/* PHOTO INPUT */}
+                    <TabsContent value="photo" className="space-y-4">
+                        <div className="relative aspect-video w-full bg-slate-200 rounded-xl overflow-hidden shadow-inner flex items-center justify-center border-2 border-dashed border-slate-300">
+                            {imagePreview ? (
+                                <Image src={imagePreview} alt="Preview" fill className="object-cover" />
+                            ) : (
+                                <div className="text-center p-6 text-slate-400">
+                                    <Camera className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                                    <p className="text-sm">写真を撮影またはアップロード</p>
+                                </div>
+                            )}
+                            <input
+                                type="file" accept="image/*" capture="environment"
+                                className="absolute inset-0 opacity-0 cursor-pointer z-20"
+                                onChange={handleFileSelect} ref={fileInputRef}
+                            />
+                        </div>
+                        {imagePreview && (
+                            <Button className="w-full h-12 bg-indigo-600" onClick={analyzePhoto} disabled={isAnalyzing}>
+                                {isAnalyzing ? <Loader2 className="animate-spin mr-2" /> : <Check className="mr-2" />}
+                                解析
+                            </Button>
+                        )}
+                        {!imagePreview && (
+                            <Button className="w-full h-12 bg-rose-600 hover:bg-rose-700 text-white" onClick={() => fileInputRef.current?.click()}>
+                                <Camera className="mr-2 h-5 w-5" />
+                                カメラ起動
+                            </Button>
+                        )}
+                        {/* Drafts Link for Photo Mode (Optional, maybe user wants to see drafts here too?) */}
+                        {drafts.length > 0 && (
+                            <div className="mt-4 pt-4 border-t border-slate-100">
+                                <Button variant="link" size="sm" className="w-full text-slate-500" onClick={() => setActiveTab('voice')}>
+                                    下書きを確認する ({drafts.length})
+                                </Button>
+                            </div>
+                        )}
+                    </TabsContent>
+
+                    {/* VOICE/TEXT INPUT */}
+                    <TabsContent value="voice" className="space-y-4">
+                        <div className={`p-4 rounded-xl border-2 ${isListening ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'} transition-colors relative`}>
+                            {/* Textarea for both Voice and Manual Input */}
+                            <Textarea
+                                placeholder="例: ライスSとハンバーグ定食、コーラ1杯"
+                                className="text-base p-2 min-h-[120px] bg-transparent border-none focus-visible:ring-0 resize-none"
+                                value={textInput}
+                                onChange={(e) => setTextInput(e.target.value)}
+                            />
+
+                            {/* Clear Button */}
+                            {textInput && !isListening && (
+                                <Button
+                                    size="icon" variant="ghost"
+                                    className="absolute top-2 right-2 h-8 w-8 text-slate-400 hover:text-red-500 hover:bg-red-50"
+                                    onClick={() => setTextInput("")}
+                                >
+                                    <X className="h-4 w-4" />
+                                </Button>
+                            )}
+
+                            {/* Voice Status Indicator */}
+                            <div className="h-8 flex items-center justify-end px-2">
+                                {isListening && (
+                                    <span className="animate-pulse text-red-500 text-xs font-bold flex items-center">
+                                        <div className="w-2 h-2 bg-red-500 rounded-full mr-2" />
+                                        聞き取り中...
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2">
+                            <Button
+                                variant={isListening ? "destructive" : "default"}
+                                className="h-12 w-full"
+                                onClick={toggleListening}
+                            >
+                                {isListening ? <StopCircle className="mr-2 h-4 w-4" /> : <Mic className="mr-2 h-4 w-4" />}
+                                {isListening ? "停止" : "音声"}
+                            </Button>
+                            <Button
+                                className="h-12 w-full bg-rose-600 hover:bg-rose-700"
+                                disabled={!textInput || isListening || isAnalyzing}
+                                onClick={() => analyzeText(textInput)}
+                            >
+                                {isAnalyzing ? <Loader2 className="animate-spin h-4 w-4" /> : <Check className="h-4 w-4" />}
+                                <span className="ml-2">解析</span>
+                            </Button>
+                            <Button
+                                variant="outline"
+                                className="h-12 w-full border-rose-200 text-rose-700 bg-rose-50 hover:bg-rose-100"
+                                disabled={!textInput || isListening}
+                                onClick={() => saveAsDraft('voice', textInput)}
+                            >
+                                下書き
+                            </Button>
+                        </div>
+
+                        {/* Recent Drafts */}
+                        {drafts.length > 0 && (
+                            <div className="mt-6">
+                                <h3 className="text-xs font-bold text-slate-500 mb-2">下書き (再開)</h3>
+                                <div className="space-y-2">
+                                    {drafts.map(draft => (
+                                        <div key={draft.id}
+                                            onClick={() => loadDraft(draft)}
+                                            className="p-3 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 active:bg-slate-50 cursor-pointer flex justify-between items-center"
+                                        >
+                                            <span className="truncate flex-1 font-medium">
+                                                {draft.ai_analysis_raw?.raw_content || draft.food_name}
+                                            </span>
+                                            <div className="flex items-center">
+                                                <span className="text-xs text-slate-400 mx-2 whitespace-nowrap">
+                                                    {new Date(draft.recorded_at).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                                <Button size="icon" variant="ghost" className="h-6 w-6 text-slate-300 hover:text-red-500 hover:bg-red-50" onClick={(e) => deleteDraft(e, draft.id)}>
+                                                    <X className="h-3 w-3" />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </TabsContent>
+                </Tabs>
+
+                {/* RESULTS LIST */}
+                {
+                    mealItems.length > 0 && (
+                        <div className="space-y-6 pt-4 border-t border-slate-100 animate-in slide-in-from-bottom-4 mb-20">
+                            {/* Totals Header */}
+                            <div className="flex justify-between items-end px-2">
+                                <h2 className="font-bold text-slate-800">記録するメニュー</h2>
+                                <div className="text-right">
+                                    <span className="text-2xl font-bold text-indigo-600">{totalCalories}</span>
+                                    <span className="text-xs text-slate-400 ml-1">kcal</span>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                {mealItems.map((item, index) => (
+                                    <Card key={index} className="overflow-hidden bg-rose-50 border-rose-100/50 shadow-sm relative">
+                                        <Button
+                                            variant="ghost" size="icon"
+                                            className="absolute top-2 right-2 bg-white text-slate-400 shadow-sm hover:text-red-500 hover:bg-red-50 z-10"
+                                            onClick={() => removeItem(index)}
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+
+                                        <CardHeader className="pb-2 pt-4 px-4 bg-rose-100/30">
+                                            <CardTitle className="text-base font-bold text-slate-800 pr-8 flex items-center gap-2">
+                                                <span className="text-2xl">{item.emoji || "🍽️"}</span>
+                                                {item.name}
+                                            </CardTitle>
+                                        </CardHeader>
+                                        <CardContent className="px-4 pb-4 space-y-4 pt-3">
+                                            <div className="flex justify-between items-end">
+                                                <div className="text-xl font-bold text-slate-700">
+                                                    {Math.round(item.calories * item.portion)} <span className="text-xs text-slate-400 font-normal">kcal</span>
+                                                </div>
+                                                <div className="flex gap-2 text-[10px] text-slate-500">
+                                                    <span className="bg-orange-50 px-2 py-1 rounded border border-orange-100">P {(item.protein * item.portion).toFixed(1)}</span>
+                                                    <span className="bg-yellow-50 px-2 py-1 rounded border border-yellow-100">F {(item.fat * item.portion).toFixed(1)}</span>
+                                                    <span className="bg-blue-50 px-2 py-1 rounded border border-blue-100">C {(item.carbs * item.portion).toFixed(1)}</span>
+                                                </div>
+                                            </div>
+
+                                            {/* Slider */}
+                                            <div className="bg-white p-3 rounded-lg space-y-2 border border-rose-100/50">
+                                                <div className="flex justify-between text-xs font-medium text-slate-700">
+                                                    <span>量: {Math.round(item.portion * 100)}%</span>
+                                                    <span>{(item.portion < 1 ? "少なめ" : item.portion > 1 ? "多め" : "標準")}</span>
+                                                </div>
+                                                <Slider
+                                                    defaultValue={[1.0]} max={2.0} min={0.1} step={0.1}
+                                                    value={[item.portion]}
+                                                    onValueChange={(vals) => updatePortion(index, vals[0])}
+                                                />
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                ))}
+                            </div>
+
+                            {/* Save Button */}
+                            <div className="sticky bottom-4 z-20">
+                                <Button
+                                    className="w-full h-14 text-lg shadow-xl bg-rose-600 hover:bg-rose-700 rounded-xl text-white"
+                                    onClick={handleSave} disabled={isSaving}
+                                >
+                                    {isSaving ? <><Loader2 className="mr-2 animate-spin" /> 保存中...</> : '記録する'}
+                                </Button>
+                            </div>
+                        </div>
+                    )
+                }
+                {/* Deletion Dialog */}
+                <AlertDialog open={!!deletingId} onOpenChange={(open) => !open && setDeletingId(null)}>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>下書きを削除</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                この下書きを削除してもよろしいですか？
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel>キャンセル</AlertDialogCancel>
+                            <AlertDialogAction onClick={executeDeleteDraft} className="bg-red-500 hover:bg-red-600">
+                                削除する
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+            </main >
+        </div >
+    );
+}
