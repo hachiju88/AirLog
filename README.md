@@ -10,8 +10,12 @@
 - **AI Vision Log**: 食事写真をアップロードして料理名・カロリー・PFC（タンパク質・脂質・炭水化物）を自動解析。Gemini 2.0 Flashを活用し、高精度な栄養推定を実現。
 - **Voice Activity Log**: 「腕立てを20回やった」などの発話をWeb Speech APIで認識し、自動で運動記録として保存。Geminiによる自然言語解析で消費カロリーも推定。
 - **Smart Analytics**: 
-  - 体重、摂取/消費カロリーの推移をグラフで可視化。
+  - 体重、摂取/消費カロリーの推移を直感的なグラフで可視化（Recharts採用）。
+  - 月/年単位の長期トレンドも見やすいスケーラブルなUI。
   - 具体的な数値ラベルと詳細履歴リストで、日々の努力を一目で確認可能。
+- **My Menu (Favorites)**:
+  - よく食べる食事や決まったトレーニングを「My Menu」に登録し、ワンタップで呼び出し可能。
+  - 記録の習慣化を強力にサポート。
 - **AI Praise Partner**: 
   - 毎日の記録内容（食事名や運動種目）を具体的に引用して、AIがパーソナライズされた褒め言葉やフィードバックを提供。
   - ランチの内容やランニングの努力を見逃さず、ポジティブにサポート。
@@ -56,3 +60,6 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+## ☁️ Deployment
+Detailed instructions for deploying to **Google Cloud Run** using Docker are available in [DEPLOY.md](./DEPLOY.md).

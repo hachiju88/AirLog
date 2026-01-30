@@ -10,13 +10,21 @@ type DashboardHeaderProps = {
         full_name: string | null;
         [key: string]: any;
     } | null;
+    selectedDate: Date;
 };
 
-export function DashboardHeader({ initialData, userProfile }: DashboardHeaderProps) {
+export function DashboardHeader({ initialData, userProfile, selectedDate }: DashboardHeaderProps) {
     const [greeting, setGreeting] = useState(`こんにちは、${userProfile?.full_name || 'ゲスト'}さん 👋`);
     const [feedback, setFeedback] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
-    const [isAI, setIsAI] = useState(false);
+
+
+    // Calculate display date context
+    const now = new Date();
+    // In real app, consider hydration mismatch if server JST != client local.
+    // For now we trust selectedDate passed from Server (which is JST 00:00).
+    // Let's rely on server prop to determine "Are we looking at today?".
+    const isToday = selectedDate.getDate() === new Date().getDate(); // approximate "Today" check for UI highlight
 
     useEffect(() => {
         const fetchFeedback = async () => {
@@ -30,7 +38,31 @@ export function DashboardHeader({ initialData, userProfile }: DashboardHeaderPro
                 return fallbackMessages[Math.floor(Math.random() * fallbackMessages.length)];
             };
 
+            // CACHE CHECK (Always check today's cache first)
+            // We want to show Today's feedback even if viewing past dates if available.
+            const CACHE_KEY = `airlog_ai_feedback_${userProfile?.id || 'guest'}_${new Date().toDateString()}`;
+
+            const cachedData = sessionStorage.getItem(CACHE_KEY);
+            if (cachedData) {
+                try {
+                    const parsed = JSON.parse(cachedData);
+                    if (parsed.greeting) setGreeting(parsed.greeting);
+                    if (parsed.feedback) setFeedback(parsed.feedback);
+                    return; // Use cache and skip API
+                } catch (e) {
+                    sessionStorage.removeItem(CACHE_KEY);
+                }
+            }
+
+            // If not today and no cache, do NOT run API (wrong context).
+            // Just show a generic greeting/fallback so the UI isn't empty.
+            if (!isToday) {
+                setFeedback(getRandomFallback());
+                return;
+            }
+
             // Check if there is data to analyze (at least one log)
+            // Even if we are viewing past, initialData here is TODAY's data for AI context.
             const hasData = (initialData.weight?.weight_kg) ||
                 (initialData.meals && initialData.meals.length > 0) ||
                 (initialData.exercises && initialData.exercises.length > 0);
@@ -53,16 +85,22 @@ export function DashboardHeader({ initialData, userProfile }: DashboardHeaderPro
 
                 if (res.ok) {
                     const data = await res.json();
-                    if (data.greeting) {
-                        setGreeting(data.greeting);
-                        setIsAI(true);
+
+                    // Update state
+                    if (data.greeting) setGreeting(data.greeting);
+                    if (data.feedback) setFeedback(data.feedback);
+                    else setFeedback(getRandomFallback());
+
+                    // SAVE TO CACHE
+                    if (data.greeting || data.feedback) {
+                        const cachePayload = {
+                            greeting: data.greeting,
+                            feedback: data.feedback,
+                            timestamp: Date.now()
+                        };
+                        sessionStorage.setItem(CACHE_KEY, JSON.stringify(cachePayload));
                     }
-                    if (data.feedback) {
-                        setFeedback(data.feedback);
-                    } else {
-                        // AI returned valid JSON but no feedback? fallback
-                        setFeedback(getRandomFallback());
-                    }
+
                 } else {
                     // API Error status
                     console.warn("AI API returned error status");
@@ -77,11 +115,11 @@ export function DashboardHeader({ initialData, userProfile }: DashboardHeaderPro
         };
 
         fetchFeedback();
-    }, [initialData, userProfile]);
+    }, [initialData, userProfile, isToday]);
 
     return (
-        <header className="px-6 py-6 bg-gradient-to-r from-indigo-100 via-purple-100 to-pink-100 shadow-sm sticky top-0 z-10">
-            <div className="flex justify-between items-start">
+        <header className="px-6 pt-6 pb-4 bg-gradient-to-r from-indigo-100 via-purple-100 to-pink-100 shadow-sm sticky top-0 z-10">
+            <div className="flex justify-between items-start mb-1">
                 <div className="flex-1">
                     <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                         {greeting}

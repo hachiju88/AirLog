@@ -1,15 +1,17 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useState, useRef, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Camera, Mic, Type, Upload, Check, X, Trash2, Plus, StopCircle, ChevronLeft, Utensils } from "lucide-react";
+import { Loader2, Camera, Mic, Check, X, Trash2, StopCircle, ChevronLeft, Utensils, Star } from "lucide-react";
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { createClient } from "@/lib/supabase/client";
 import { cn, compressImage } from "@/lib/utils";
+import { FavoriteSelector } from "../_components/FavoriteSelector";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
 import {
@@ -35,12 +37,51 @@ type MealItem = {
     portion: number;
 };
 
-export default function MealLogPage() {
+function MealLogContent() {
+    // ...
+    // Favorites State
+    // Bulk save removed, now single item save only.
+
+    const handleFavoriteSelect = (item: any) => {
+        // item.content can be a single object or an array of items
+        // If it's a single object (old schema maybe?), wrap it. 
+        // But for "Meal", content should ideally be { items: [...] } or just an array.
+        // Let's assume content is the stored JSON.
+
+        let loadedItems: MealItem[] = [];
+
+        if (item.content.items && Array.isArray(item.content.items)) {
+            loadedItems = item.content.items;
+        } else if (item.content.name) {
+            // Single item structure
+            loadedItems = [{
+                name: item.content.name,
+                calories: item.content.calories || 0,
+                protein: item.content.protein || 0,
+                fat: item.content.fat || 0,
+                carbs: item.content.carbs || 0,
+                fiber: item.content.fiber || 0,
+                salt: item.content.salt || 0,
+                portion: 1.0
+            }];
+        }
+
+        if (loadedItems.length > 0) {
+            setMealItems(prev => [...prev, ...loadedItems]);
+            toast.info(`My Menuから${loadedItems.length}件読み込みました`);
+            setActiveTab('voice'); // Switch to results/voice tab context
+        } else {
+            toast.error("メニューの内容を読み込めませんでした");
+        }
+    };
+
     const router = useRouter();
     const [activeTab, setActiveTab] = useState("photo");
     const [mealItems, setMealItems] = useState<MealItem[]>([]);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+
+
 
     // Photo State
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -156,6 +197,7 @@ export default function MealLogPage() {
     };
 
     // --- Voice Logic ---
+    const isListeningRef = useRef(false);
     useEffect(() => {
         if (typeof window !== 'undefined' && (window as any).webkitSpeechRecognition) {
             const SpeechRecognition = (window as any).webkitSpeechRecognition;
@@ -177,8 +219,23 @@ export default function MealLogPage() {
                     setTextInput(prev => prev + newFinal);
                 }
             };
+
+            recognitionRef.current.onend = () => {
+                if (isListeningRef.current) {
+                    try {
+                        recognitionRef.current.start();
+                    } catch (e) {
+                        // ignore
+                    }
+                }
+            };
         }
     }, []);
+
+    // Sync ref
+    useEffect(() => {
+        isListeningRef.current = isListening;
+    }, [isListening]);
 
     const toggleListening = () => {
         if (isListening) {
@@ -211,6 +268,8 @@ export default function MealLogPage() {
             };
 
             await supabase.from('meal_logs').insert([record]);
+
+            setTextInput(""); // Reset text input
             toast.success('下書きとして保存しました', { description: '後で編集できます' });
             router.push('/dashboard');
             router.refresh();
@@ -307,6 +366,43 @@ export default function MealLogPage() {
         setMealItems(newItems);
     };
 
+    const handleSaveSingleFavorite = async (index: number) => {
+        const item = mealItems[index];
+        try {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                toast.error("ログインが必要です");
+                return;
+            }
+
+            const favoriteData = {
+                user_id: user.id,
+                type: 'meal',
+                name: item.name,
+                content: {
+                    // Save as single item list for consistency or single object?
+                    // Selector supports single object in 'content' if no 'items' array.
+                    // Let's use single object structure for simplicity of "Single Item"
+                    name: item.name,
+                    calories: item.calories,
+                    protein: item.protein,
+                    fat: item.fat,
+                    carbs: item.carbs,
+                    fiber: item.fiber,
+                    salt: item.salt
+                }
+            };
+
+            const { error } = await supabase.from('favorites').insert([favoriteData]);
+            if (error) throw error;
+            toast.success(`「${item.name}」をMy Menuに登録しました`);
+        } catch (e) {
+            console.error(e);
+            toast.error("保存に失敗しました");
+        }
+    };
+
     const handleSave = async () => {
         if (mealItems.length === 0) return;
         setIsSaving(true);
@@ -329,10 +425,10 @@ export default function MealLogPage() {
                 recorded_at: draftDate || new Date().toISOString() // Use draft date if valid
             }));
 
+            // Save to Favorites logic removed as per request (now single item only)
+
             if (editingId) {
-                // Update existing draft (first item logic, simplified for now)
-                // Note: If analysis returns multiple items, we might need to delete old and insert new, or just update the first one.
-                // For safety/simplicity with multi-item results, we'll DELETE the draft and INSERT new records.
+                // Update existing draft
                 await supabase.from('meal_logs').delete().eq('id', editingId);
                 await supabase.from('meal_logs').insert(records);
             } else {
@@ -367,11 +463,14 @@ export default function MealLogPage() {
                 <Tabs defaultValue="photo" value={activeTab} onValueChange={setActiveTab} className="w-full">
                     <TabsList className="grid w-full grid-cols-2 mb-4">
                         <TabsTrigger value="photo"><Camera className="h-4 w-4 mr-2" />写真</TabsTrigger>
-                        <TabsTrigger value="voice"><Mic className="h-4 w-4 mr-2" />音声・テキスト</TabsTrigger>
+                        <TabsTrigger value="voice"><Mic className="h-4 w-4 mr-2" />音声・手入力</TabsTrigger>
                     </TabsList>
 
                     {/* PHOTO INPUT */}
                     <TabsContent value="photo" className="space-y-4">
+                        <div className="flex justify-end">
+                            <FavoriteSelector type="meal" onSelect={handleFavoriteSelect} />
+                        </div>
                         <div className="relative aspect-video w-full bg-slate-200 rounded-xl overflow-hidden shadow-inner flex items-center justify-center border-2 border-dashed border-slate-300">
                             {imagePreview ? (
                                 <Image src={imagePreview} alt="Preview" fill className="object-cover" />
@@ -411,6 +510,9 @@ export default function MealLogPage() {
 
                     {/* VOICE/TEXT INPUT */}
                     <TabsContent value="voice" className="space-y-4">
+                        <div className="flex justify-end">
+                            <FavoriteSelector type="meal" onSelect={handleFavoriteSelect} />
+                        </div>
                         <div className={`p-4 rounded-xl border-2 ${isListening ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'} transition-colors relative`}>
                             {/* Textarea for both Voice and Manual Input */}
                             <Textarea
@@ -484,7 +586,7 @@ export default function MealLogPage() {
                                             </span>
                                             <div className="flex items-center">
                                                 <span className="text-xs text-slate-400 mx-2 whitespace-nowrap">
-                                                    {new Date(draft.recorded_at).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                    {new Date(draft.recorded_at).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })}
                                                 </span>
                                                 <Button size="icon" variant="ghost" className="h-6 w-6 text-slate-300 hover:text-red-500 hover:bg-red-50" onClick={(e) => deleteDraft(e, draft.id)}>
                                                     <X className="h-3 w-3" />
@@ -514,18 +616,28 @@ export default function MealLogPage() {
                             <div className="space-y-4">
                                 {mealItems.map((item, index) => (
                                     <Card key={index} className="overflow-hidden bg-rose-50 border-rose-100/50 shadow-sm relative">
-                                        <Button
-                                            variant="ghost" size="icon"
-                                            className="absolute top-2 right-2 bg-white text-slate-400 shadow-sm hover:text-red-500 hover:bg-red-50 z-10"
-                                            onClick={() => removeItem(index)}
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button>
+                                        <div className="absolute top-2 right-2 flex gap-2 z-10">
+                                            <Button
+                                                variant="ghost"
+                                                className="bg-white text-yellow-500 shadow-sm hover:text-yellow-600 hover:bg-yellow-50 h-8 px-3 text-xs font-bold gap-1"
+                                                onClick={() => handleSaveSingleFavorite(index)}
+                                            >
+                                                <Star className="h-3 w-3 fill-yellow-500" />
+                                                My Menuに登録
+                                            </Button>
+                                            <Button
+                                                variant="ghost" size="icon"
+                                                className="bg-white text-slate-400 shadow-sm hover:text-red-500 hover:bg-red-50 h-8 w-8"
+                                                onClick={() => removeItem(index)}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </div>
 
                                         <CardHeader className="pb-2 pt-4 px-4 bg-rose-100/30">
-                                            <CardTitle className="text-base font-bold text-slate-800 pr-8 flex items-center gap-2">
+                                            <CardTitle className="text-base font-bold text-slate-800 pr-32 flex items-center gap-2">
                                                 <span className="text-2xl">{item.emoji || "🍽️"}</span>
-                                                {item.name}
+                                                <span className="truncate">{item.name}</span>
                                             </CardTitle>
                                         </CardHeader>
                                         <CardContent className="px-4 pb-4 space-y-4 pt-3">
@@ -558,7 +670,9 @@ export default function MealLogPage() {
                             </div>
 
                             {/* Save Button */}
-                            <div className="sticky bottom-4 z-20">
+                            <div className="sticky bottom-4 z-20 space-y-3">
+                                {/* Removed bulk favorite checkbox */}
+
                                 <Button
                                     className="w-full h-14 text-lg shadow-xl bg-rose-600 hover:bg-rose-700 rounded-xl text-white"
                                     onClick={handleSave} disabled={isSaving}
@@ -588,5 +702,13 @@ export default function MealLogPage() {
                 </AlertDialog>
             </main >
         </div >
+    );
+}
+
+export default function MealLogPage() {
+    return (
+        <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-rose-600" /></div>}>
+            <MealLogContent />
+        </Suspense>
     );
 }

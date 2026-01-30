@@ -28,20 +28,20 @@ export function ExerciseHistoryList({ logs }: ExerciseHistoryListProps) {
     );
 
     return (
-        <Card className="bg-white border-slate-200 shadow-sm">
-            <CardHeader className="pb-3 border-b border-slate-100">
-                <CardTitle className="text-sm font-bold text-slate-700">運動履歴詳細</CardTitle>
+        <Card className="bg-cyan-50/50 border-cyan-100 shadow-sm">
+            <CardHeader className="pb-3 border-b border-cyan-100">
+                <CardTitle className="text-sm font-bold text-slate-500">運動実績</CardTitle>
             </CardHeader>
-            <CardContent className="p-0">
-                <div className="divide-y divide-slate-100">
+            <CardContent className="p-4">
+                <div className="space-y-3">
                     {sortedLogs.map((log) => (
-                        <div key={log.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                        <div key={log.id} className="p-3 bg-white rounded-lg border border-cyan-100/50 shadow-sm flex items-center justify-between hover:shadow-md transition-all">
                             <div className="flex-1 min-w-0 mr-4">
                                 <div className="flex items-center gap-2 mb-1">
-                                    <span className="text-xs text-slate-400 font-mono">
+                                    <span className="text-xs text-cyan-600/60 font-mono">
                                         {format(new Date(log.recorded_at), "MM/dd HH:mm", { locale: ja })}
                                     </span>
-                                    <h4 className="text-sm font-medium text-slate-900 truncate">
+                                    <h4 className="text-sm font-bold text-slate-700 truncate">
                                         {log.exercise_name}
                                     </h4>
                                 </div>

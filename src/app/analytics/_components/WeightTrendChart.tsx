@@ -19,7 +19,7 @@ type WeightData = {
     bmi?: number;
 };
 
-export function WeightTrendChart({ data, target }: { data: WeightData[], target?: number }) {
+export function WeightTrendChart({ data, target, period }: { data: WeightData[], target?: number, period: string }) {
     if (!data || data.length === 0) {
         return (
             <Card className="h-[300px] flex items-center justify-center text-slate-400">
@@ -28,10 +28,21 @@ export function WeightTrendChart({ data, target }: { data: WeightData[], target?
         );
     }
 
+    const showDots = period !== 'month' && period !== 'year';
+
     // Calculate Y-axis domain padding
-    const weights = data.map(d => d.weight);
-    const minWeight = Math.min(...weights) - 1;
-    const maxWeight = Math.max(...weights) + 1;
+    const weights = data.map(d => d.weight).filter(w => w !== null && w !== undefined);
+    let minDomain = weights.length > 0 ? Math.min(...weights) : 0;
+    let maxDomain = weights.length > 0 ? Math.max(...weights) : 100;
+
+    // Include target in domain
+    if (target) {
+        minDomain = Math.min(minDomain, target);
+        maxDomain = Math.max(maxDomain, target);
+    }
+
+    const minWeight = minDomain - 1;
+    const maxWeight = maxDomain + 1;
 
     return (
         <Card>
@@ -49,6 +60,12 @@ export function WeightTrendChart({ data, target }: { data: WeightData[], target?
                                 tickLine={false}
                                 axisLine={false}
                                 minTickGap={30}
+                                tickFormatter={(val) => {
+                                    // YYYY/MM/DD -> MM/DD
+                                    const parts = val.split('/');
+                                    if (parts.length >= 3) return `${parts[1]}/${parts[2]}`;
+                                    return val;
+                                }}
                             />
                             <YAxis
                                 domain={[minWeight, maxWeight]}
@@ -60,21 +77,26 @@ export function WeightTrendChart({ data, target }: { data: WeightData[], target?
                                 contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                                 itemStyle={{ color: '#4F46E5', fontWeight: 'bold' }}
                                 labelStyle={{ color: '#64748B', fontSize: '12px', marginBottom: '4px' }}
+                                labelFormatter={(label) => {
+                                    // Full date in tooltip
+                                    return label;
+                                }}
                             />
                             <Line
                                 type="monotone"
+                                connectNulls
                                 dataKey="weight"
                                 stroke="#4F46E5"
                                 strokeWidth={3}
-                                dot={{ fill: '#4F46E5', r: 4, strokeWidth: 2, stroke: '#fff' }}
+                                dot={showDots ? { fill: '#4F46E5', r: 4, strokeWidth: 2, stroke: '#fff' } : false}
                                 activeDot={{ r: 6 }}
                             />
                             {target && (
                                 <ReferenceLine
                                     y={target}
-                                    stroke="#EF4444"
+                                    stroke="#94A3B8"
                                     strokeDasharray="3 3"
-                                    label={{ value: '目標', position: 'right', fill: '#EF4444', fontSize: 10 }}
+                                    label={{ value: '目標', position: 'insideTopRight', fill: '#94A3B8', fontSize: 10 }}
                                 />
                             )}
                         </LineChart>

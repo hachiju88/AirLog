@@ -25,6 +25,12 @@ COPY . .
 # Uncomment the following line in case you want to disable telemetry during the build.
 ENV NEXT_TELEMETRY_DISABLED 1
 
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+
 RUN \
   if [ -f package-lock.json ]; then npm run build; \
   else echo "Lockfile not found." && exit 1; \
@@ -44,8 +50,8 @@ RUN adduser --system --uid 1001 nextjs
 COPY --from=builder /app/public ./public
 
 # Set the correct permission for prerender cache
-mkdir .next
-chown nextjs:nodejs .next
+RUN mkdir -p .next
+RUN chown nextjs:nodejs .next
 
 # Automatically leverage output traces to reduce image size
 # https://nextjs.org/docs/advanced-features/output-file-tracing

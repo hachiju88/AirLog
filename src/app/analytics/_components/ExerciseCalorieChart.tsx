@@ -18,7 +18,7 @@ type CalorieData = {
     calories: number;
 };
 
-export function ExerciseCalorieChart({ data, target }: { data: CalorieData[], target: number }) {
+export function ExerciseCalorieChart({ data, target, period }: { data: CalorieData[], target: number, period: string }) {
     if (!data || data.length === 0) {
         return (
             <Card className="h-[300px] flex items-center justify-center text-slate-400">
@@ -27,8 +27,13 @@ export function ExerciseCalorieChart({ data, target }: { data: CalorieData[], ta
         );
     }
 
-    // Calculate total
+    const showDots = period !== 'month' && period !== 'year';
+
     const totalBurned = data.reduce((sum, d) => sum + d.calories, 0);
+    const values = data.map(d => d.calories);
+    const maxVal = Math.max(...values, 0);
+    let maxDomain = Math.max(maxVal, target) * 1.1;
+    maxDomain = Math.ceil(maxDomain / 100) * 100;
 
     return (
         <Card>
@@ -41,8 +46,8 @@ export function ExerciseCalorieChart({ data, target }: { data: CalorieData[], ta
                 </div>
             </CardHeader>
             <CardContent>
-                <div className="h-[250px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
+                <div className="h-[250px] w-full min-w-0">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                         <LineChart data={data} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
                             <XAxis
@@ -50,8 +55,14 @@ export function ExerciseCalorieChart({ data, target }: { data: CalorieData[], ta
                                 tick={{ fontSize: 10, fill: '#94A3B8' }}
                                 tickLine={false}
                                 axisLine={false}
+                                tickFormatter={(val) => {
+                                    const parts = val.split('/');
+                                    if (parts.length >= 3) return `${parts[1]}/${parts[2]}`;
+                                    return val;
+                                }}
                             />
                             <YAxis
+                                domain={[0, maxDomain]}
                                 tick={{ fontSize: 10, fill: '#94A3B8' }}
                                 tickLine={false}
                                 axisLine={false}
@@ -61,22 +72,24 @@ export function ExerciseCalorieChart({ data, target }: { data: CalorieData[], ta
                                 itemStyle={{ color: '#06B6D4', fontWeight: 'bold' }}
                                 labelStyle={{ color: '#64748B', fontSize: '12px', marginBottom: '4px' }}
                             />
-                            <ReferenceLine y={target} stroke="#10B981" strokeDasharray="3 3" label={{ value: '目標', position: 'insideTopRight', fill: '#10B981', fontSize: 10 }} />
+                            <ReferenceLine y={target} stroke="#94A3B8" strokeDasharray="3 3" label={{ value: '目標', position: 'insideTopRight', fill: '#94A3B8', fontSize: 10 }} />
                             <Line
                                 type="monotone"
                                 dataKey="calories"
                                 stroke="#06B6D4"
                                 strokeWidth={2}
-                                dot={{ fill: '#06B6D4', r: 3 }}
+                                dot={showDots ? { fill: '#06B6D4', r: 3 } : false}
                                 activeDot={{ r: 5 }}
                             >
-                                <LabelList
-                                    dataKey="calories"
-                                    position="top"
-                                    offset={10}
-                                    className="fill-cyan-600 text-[10px] font-bold"
-                                    formatter={(value: any) => value > 0 ? value : ''}
-                                />
+                                {showDots && (
+                                    <LabelList
+                                        dataKey="calories"
+                                        position="top"
+                                        offset={10}
+                                        className="fill-cyan-600 text-[10px] font-bold"
+                                        formatter={(value: any) => value > 0 ? value : ''}
+                                    />
+                                )}
                             </Line>
                         </LineChart>
                     </ResponsiveContainer>

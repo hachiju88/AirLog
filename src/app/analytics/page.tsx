@@ -21,25 +21,30 @@ export default async function AnalyticsPage({
     const period = params.period || 'week'; // day, week, month, year
     const activeTab = params.tab || 'weight'; // weight, meal, exercise
 
-    // --- Date Calculations ---
-    const now = new Date();
-    // Default to 'week'
-    let startDate = new Date(now);
+    // --- Date Calculations (JST) ---
+    // Start "Today" based on JST
+    const getJSTDate = () => {
+        const d = new Date();
+        const jstStr = d.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' });
+        const jstDate = new Date(jstStr);
+        jstDate.setHours(0, 0, 0, 0); // Normalize to midnight
+        return jstDate;
+    };
+
+    const todayJST = getJSTDate();
+    let startDate = new Date(todayJST);
 
     // Adjust start date based on period
     if (period === 'month') {
-        startDate.setDate(now.getDate() - 29); // Last 30 days
-        startDate.setHours(0, 0, 0, 0);
+        startDate.setDate(todayJST.getDate() - 29); // Last 30 days
     } else if (period === 'year') {
-        startDate.setFullYear(now.getFullYear() - 1); // Last 1 year
-        startDate.setHours(0, 0, 0, 0);
+        startDate.setFullYear(todayJST.getFullYear() - 1); // Last 1 year
     } else {
         // Default 'week'
-        startDate.setDate(now.getDate() - 6); // Last 7 days
-        startDate.setHours(0, 0, 0, 0);
+        startDate.setDate(todayJST.getDate() - 6); // Last 7 days
     }
 
-    const endDate = new Date(now);
+    const endDate = new Date(todayJST);
     endDate.setHours(23, 59, 59, 999);
 
     // --- Data Fetching ---
@@ -84,10 +89,15 @@ export default async function AnalyticsPage({
 
     // --- Aggregation Logic ---
 
-    // Helper to get date string key (MM/DD)
+    // Helper to get date string key (YYYY/MM/DD) in JST
     const getDateKey = (dateStr: string) => {
         const d = new Date(dateStr);
-        return `${d.getMonth() + 1}/${d.getDate()}`;
+        return d.toLocaleDateString('ja-JP', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            timeZone: 'Asia/Tokyo'
+        });
     };
 
     // Helper to generate date range array
@@ -233,32 +243,36 @@ export default async function AnalyticsPage({
         <div className="min-h-screen bg-slate-50 pb-24">
             <header className="px-6 py-4 bg-gradient-to-r from-indigo-100 via-purple-100 to-pink-100 shadow-sm sticky top-0 z-10 flex items-center justify-between">
                 <h1 className="text-xl font-bold text-slate-800">レポート</h1>
-                <PeriodSelector currentPeriod={period} />
+                <Suspense fallback={<div className="h-8 w-32 bg-slate-200 rounded animate-pulse" />}>
+                    <PeriodSelector currentPeriod={period} />
+                </Suspense>
             </header>
 
             <main className="px-4 py-6 space-y-6">
-                <AnalyticsTabs
-                    currentTab={activeTab}
-                    period={period}
-                    weightData={{
-                        trend: weightTrend,
-                        average: bodyCompAvg, // Passing average instead of latest
-                        target: targetWeight
-                    }}
-                    mealData={{
-                        calories: mealCalories,
-                        nutrients: nutrientAvg,
-                        target: targetIntake
-                    }}
-                    exerciseData={{
-                        calories: exerciseCalories,
-                        target: targetBurned,
-                        total: totalBurnedFromLogs,
-                        average: averageBurned,
-                        logs: exerciseLogs || []
-                    }}
+                <Suspense fallback={<div className="h-96 w-full bg-slate-100 rounded-xl animate-pulse" />}>
+                    <AnalyticsTabs
+                        currentTab={activeTab}
+                        period={period}
+                        weightData={{
+                            trend: weightTrend,
+                            average: bodyCompAvg, // Passing average instead of latest
+                            target: targetWeight
+                        }}
+                        mealData={{
+                            calories: mealCalories,
+                            nutrients: nutrientAvg,
+                            target: targetIntake
+                        }}
+                        exerciseData={{
+                            calories: exerciseCalories,
+                            target: targetBurned,
+                            total: totalBurnedFromLogs,
+                            average: averageBurned,
+                            logs: exerciseLogs || []
+                        }}
 
-                />
+                    />
+                </Suspense>
             </main>
 
             <BottomNav />

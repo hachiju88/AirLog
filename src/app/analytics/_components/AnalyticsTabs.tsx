@@ -71,17 +71,17 @@ export function AnalyticsTabs({ currentTab, period, weightData, mealData, exerci
             </TabsList>
 
             <TabsContent value="weight" className="space-y-6 animate-in fade-in-50 slide-in-from-bottom-2">
-                <WeightTrendChart data={weightData.trend} target={weightData.target} />
+                <WeightTrendChart data={weightData.trend} target={weightData.target} period={period} />
                 <BodyCompositionGrid data={weightData.average} periodLabel={periodLabel} />
             </TabsContent>
 
             <TabsContent value="meal" className="space-y-6 animate-in fade-in-50 slide-in-from-bottom-2">
-                <MealCalorieChart data={mealData.calories} target={mealData.target} />
+                <MealCalorieChart data={mealData.calories} target={mealData.target} period={period} />
                 <NutrientBalanceList data={mealData.nutrients} periodLabel={periodLabel} />
             </TabsContent>
 
             <TabsContent value="exercise" className="space-y-6 animate-in fade-in-50 slide-in-from-bottom-2">
-                <ExerciseCalorieChart data={exerciseData.calories} target={exerciseData.target} />
+                <ExerciseCalorieChart data={exerciseData.calories} target={exerciseData.target} period={period} />
                 <ExerciseSummary total={exerciseData.total} average={exerciseData.average} periodLabel={periodLabel} />
                 <ExerciseHistoryList logs={exerciseData.logs} />
             </TabsContent>

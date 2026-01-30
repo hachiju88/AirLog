@@ -2,14 +2,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Camera, Mic, Activity, Flame, Utensils } from "lucide-react";
+import { Activity, Flame, Utensils, Calendar } from "lucide-react";
 import { BottomNav } from "@/components/BottomNav";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { DashboardHeader } from "./_components/DashboardHeader";
 
-export default async function DashboardPage() {
+type Props = {
+    searchParams: Promise<{ date?: string }>;
+};
+
+export default async function DashboardPage({ searchParams }: Props) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -27,23 +31,51 @@ export default async function DashboardPage() {
     const displayName = profile?.full_name || 'ゲスト';
     const targetWeight = profile?.target_weight_kg || '-';
 
+    // Resolved params (Nextjs 15+ needs await, 16 is safer to await too)
+    const { date } = await searchParams;
 
-    // Date range for "today"
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    // Date Logic (Robust JST)
+    const getJSTDateStr = () => {
+        const now = new Date();
+        const formatter = new Intl.DateTimeFormat('ja-JP', {
+            timeZone: 'Asia/Tokyo',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        });
+        const parts = formatter.formatToParts(now);
+        const y = parts.find(p => p.type === 'year')?.value;
+        const m = parts.find(p => p.type === 'month')?.value;
+        const d = parts.find(p => p.type === 'day')?.value;
+        return `${y}-${m}-${d}`;
+    };
+
+    const todayStr = getJSTDateStr();
+    const selectedDateStr = date || todayStr;
+
+    // Construct Range: 00:00 JST to 00:00 JST next day
+    // We use explicit offset in string to ensure consistency across environments (UTC or JST server)
+    const startJST = new Date(`${selectedDateStr}T00:00:00+09:00`);
+    const endJST = new Date(startJST.getTime() + 24 * 60 * 60 * 1000);
+
+    // Queries use ISO strings which are always UTC
+    const startUTC = startJST;
+    const endUTC = endJST;
+
+    // AI Context Logic
+    // Update: User requested NO AI generation for past dates.
+    // So we just fetch the data for the selected view range.
 
     // Fetch Meal Logs
     let { data: todaysLogs } = await supabase
         .from('meal_logs')
         .select('*')
         .eq('user_id', user.id)
-        .gte('recorded_at', today.toISOString())
-        .lt('recorded_at', tomorrow.toISOString())
+        .gte('recorded_at', startUTC.toISOString())
+        .lt('recorded_at', endUTC.toISOString())
         .order('recorded_at', { ascending: false });
 
-    // Filter out pending drafts
+    // Filter meals
     if (todaysLogs) {
         todaysLogs = todaysLogs.filter(log => {
             const raw = log.ai_analysis_raw as any;
@@ -56,9 +88,9 @@ export default async function DashboardPage() {
         .from('exercise_logs')
         .select('*')
         .eq('user_id', user.id)
-        .gte('recorded_at', today.toISOString())
-        .lt('recorded_at', tomorrow.toISOString())
-        .order('recorded_at', { ascending: false });
+        .gte('recorded_at', startUTC.toISOString())
+        .lt('recorded_at', endUTC.toISOString())
+        .order('recorded_at', { ascending: true });
 
     if (todaysExercises) {
         todaysExercises = todaysExercises.filter(log => {
@@ -67,7 +99,7 @@ export default async function DashboardPage() {
         });
     }
 
-    // Fetch Latest Weight
+    // Fetch Latest Weight (Always latest known)
     const { data: latestWeightLog } = await supabase
         .from('health_logs')
         .select('*')
@@ -75,6 +107,22 @@ export default async function DashboardPage() {
         .order('recorded_at', { ascending: false })
         .limit(1)
         .single();
+
+    // Date Navigation Generators
+    // Date Navigation Generators
+    const todayJSTforNav = new Date(`${todayStr}T00:00:00+09:00`);
+
+    const getLink = (offset: number) => {
+        const d = new Date(todayJSTforNav);
+        d.setDate(d.getDate() - offset);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const da = String(d.getDate()).padStart(2, '0');
+        return `/dashboard?date=${y}-${m}-${da}`;
+    };
+    const formatDate = (d: Date) => {
+        return d.toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short', timeZone: 'Asia/Tokyo' });
+    };
 
     // Calculate totals
     // Calorie Targets (default if not set)
@@ -98,31 +146,83 @@ export default async function DashboardPage() {
 
     // Intake Progress Logic
     const intakeProgressPercent = (totalCalories / targetIntake) * 100;
-    let intakeColor = "bg-primary";
-    if (intakeProgressPercent > 120) intakeColor = "bg-red-500";
-    else if (intakeProgressPercent > 100) intakeColor = "bg-orange-500";
+    let intakeColor = "bg-rose-400";
+    if (intakeProgressPercent > 100) intakeColor = "bg-red-500";
 
     // Burned Progress Logic
     const burnedProgressPercent = (totalBurned / targetBurned) * 100;
     let burnedColor = "bg-cyan-500"; // Default Blue
     if (burnedProgressPercent >= 100) burnedColor = "bg-green-500"; // Goal Met!
 
+    // Grouping Logic
+    const groupLogsBySlot = (logs: any[]) => {
+        const groups = { morning: [] as any[], afternoon: [] as any[], night: [] as any[] };
+        if (!logs) return groups;
+        logs.forEach(log => {
+            const d = new Date(log.recorded_at);
+            const hour = parseInt(d.toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: 'Asia/Tokyo' }));
+            if (hour < 12) groups.morning.push(log);
+            else if (hour < 17) groups.afternoon.push(log);
+            else groups.night.push(log);
+        });
+        return groups;
+    };
+
+    const mealGroups = groupLogsBySlot(todaysLogs || []);
+    const exerciseGroups = groupLogsBySlot(todaysExercises || []);
+
+    const slotLabels: { [key: string]: string } = { morning: '朝', afternoon: '昼', night: '夜' };
+    const slotStyles: { [key: string]: string } = {
+        morning: 'bg-orange-50 border-orange-100',
+        afternoon: 'bg-sky-50 border-sky-100',
+        night: 'bg-indigo-50 border-indigo-100'
+    };
+
     return (
         <div className="min-h-screen bg-slate-50 pb-24">
 
-            {/* Header */}
+            {/* Header with AI (Only for Today) */}
             <DashboardHeader
                 initialData={{
                     weight: latestWeightLog,
                     meals: todaysLogs,
                     exercises: todaysExercises,
-                    totalCalories,
-                    totalBurned
                 }}
                 userProfile={profile}
+                selectedDate={startJST}
             />
 
-            <main className="px-4 py-6 space-y-6">
+            {/* Date Navigation - Separate from Header, Sticky below header */}
+            <div className="sticky top-[88px] z-10 py-1 bg-slate-50/95 backdrop-blur-sm flex items-center justify-center gap-4 overflow-x-auto no-scrollbar px-4">
+                <div className="inline-flex p-1 gap-1">
+                    {[2, 1, 0].map((daysAgo) => {
+                        const d = new Date(todayJSTforNav);
+                        d.setDate(d.getDate() - daysAgo);
+
+                        // Determine active: Comparing JST Day equality
+                        const isActive = startJST.getTime() === d.getTime();
+
+                        return (
+                            <Link
+                                key={daysAgo}
+                                href={getLink(daysAgo)}
+                                className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${isActive
+                                    ? "bg-indigo-600 text-white shadow-md"
+                                    : "text-slate-600 hover:bg-slate-50"
+                                    }`}
+                            >
+                                {daysAgo === 0 ? "今日" : daysAgo === 1 ? "昨日" : daysAgo === 2 ? "一昨日" : formatDate(d)}
+                            </Link>
+                        );
+                    })}
+                </div>
+                <div className="flex items-center gap-2 px-3 py-1 bg-white/50 rounded-full border border-slate-200 text-sm font-bold text-slate-600 shadow-sm whitespace-nowrap">
+                    <Calendar className="h-4 w-4 text-slate-400" />
+                    {startJST.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short', timeZone: 'Asia/Tokyo' })}
+                </div>
+            </div>
+
+            <main className="px-4 pt-0 pb-24 space-y-6">
                 {/* Daily Summary (Progress) */}
                 <div className="grid grid-cols-2 gap-4">
                     {/* Weight Card - Span 2 cols */}
@@ -152,7 +252,7 @@ export default async function DashboardPage() {
                                     )}
                                 </div>
                                 <div className="text-xs text-indigo-600/80 mb-1">
-                                    {latestWeightLog ? new Date(latestWeightLog.recorded_at).toLocaleDateString('ja-JP') : '記録なし'}
+                                    {latestWeightLog ? new Date(latestWeightLog.recorded_at).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' }) : '記録なし'}
                                 </div>
                             </div>
 
@@ -214,10 +314,10 @@ export default async function DashboardPage() {
                                 <div className={`text-2xl font-bold ${intakeProgressPercent > 100 ? 'text-rose-600' : 'text-rose-950'}`}>
                                     {totalCalories.toLocaleString()} <span className="text-sm font-normal text-rose-900/60">kcal</span>
                                 </div>
-                                <div className="text-xs font-bold text-rose-900/60 flex items-center gap-1">
-                                    {Math.round(intakeProgressPercent)}%
+                                <div className="text-xs font-bold text-rose-900/60 flex flex-col items-end">
+                                    <span>{Math.round(intakeProgressPercent)}%</span>
                                     {intakeProgressPercent > 100 && (
-                                        <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">Over</span>
+                                        <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full mt-0.5">Over</span>
                                     )}
                                 </div>
                             </div>
@@ -266,14 +366,14 @@ export default async function DashboardPage() {
 
                     {/* Helper to calculate progress props */}
                     {(() => {
-                        const renderProgress = (label: string, value: number, target: number, isLimitType: boolean, cardBgColor: string) => {
+                        const renderProgress = (label: string, value: number, target: number, isLimitType: boolean, cardBgColor: string, progressColor: string) => {
                             const percent = (value / target) * 100;
 
                             // Logic:
-                            // If isLimitType (Fat, Carbs, Salt): <100 ok (Black), >100 Alert (Red) + Over Badge
-                            // If not limit (Protein, Fiber): Always Black (bg-primary)
+                            // If isLimitType (Fat, Carbs, Salt): <100 ok (progressColor), >100 Alert (Red) + Over Badge
+                            // If not limit (Protein, Fiber): Always progressColor
 
-                            let colorClass = "bg-primary";
+                            let colorClass = progressColor;
 
                             if (isLimitType) {
                                 if (percent > 100) colorClass = "bg-red-500";
@@ -303,12 +403,12 @@ export default async function DashboardPage() {
 
                         return (
                             <>
-                                {renderProgress("タンパク質", totalProtein, targetProtein, false, "bg-orange-50")}
-                                {renderProgress("脂質", totalFat, targetFat, true, "bg-yellow-50")}
-                                {renderProgress("炭水化物", totalCarbs, targetCarbs, true, "bg-blue-50")}
+                                {renderProgress("タンパク質", totalProtein, targetProtein, false, "bg-orange-50", "bg-orange-500")}
+                                {renderProgress("脂質", totalFat, targetFat, true, "bg-yellow-50", "bg-yellow-500")}
+                                {renderProgress("炭水化物", totalCarbs, targetCarbs, true, "bg-blue-50", "bg-blue-500")}
 
-                                {renderProgress("食物繊維", todaysLogs?.reduce((sum, log) => sum + (log.fiber_g || 0), 0) || 0, targetFiber, false, "bg-green-50")}
-                                {renderProgress("塩分", todaysLogs?.reduce((sum, log) => sum + (log.salt_g || 0), 0) || 0, targetSalt, true, "bg-purple-50")}
+                                {renderProgress("食物繊維", todaysLogs?.reduce((sum, log) => sum + (log.fiber_g || 0), 0) || 0, targetFiber, false, "bg-green-50", "bg-green-500")}
+                                {renderProgress("塩分", todaysLogs?.reduce((sum, log) => sum + (log.salt_g || 0), 0) || 0, targetSalt, true, "bg-purple-50", "bg-purple-500")}
                             </>
                         );
                     })()}
@@ -317,25 +417,37 @@ export default async function DashboardPage() {
                 {/* Dietary Logs */}
                 <div>
                     <h2 className="text-sm font-bold text-slate-500 mb-4">今日の食事</h2>
-                    <div className="space-y-3">
-                        {todaysLogs && todaysLogs.length > 0 ? (
-                            todaysLogs.map((log) => {
-                                const raw = log.ai_analysis_raw as any;
-                                const emoji = raw?.emoji || "🍽️";
-
+                    <div className="space-y-6">
+                        {(todaysLogs && todaysLogs.length > 0) ? (
+                            ['morning', 'afternoon', 'night'].map(slot => {
+                                const logs = mealGroups[slot as keyof typeof mealGroups];
+                                if (logs.length === 0) return null;
                                 return (
-                                    <div key={log.id} className="p-4 bg-white rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
-                                        <div className="h-12 w-12 bg-slate-50 rounded-lg flex items-center justify-center text-2xl">
-                                            {emoji}
+                                    <div key={slot} className="space-y-3">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-bold text-slate-500">{slotLabels[slot]}</span>
+                                            <div className="h-px flex-1 bg-slate-200"></div>
                                         </div>
-                                        <div className="flex-1">
-                                            <h4 className="font-bold text-slate-900">{log.food_name}</h4>
-                                            <p className="text-xs text-slate-500">{new Date(log.recorded_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}</p>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="font-bold text-slate-900">{log.calories} kcal</div>
-                                            <div className="text-xs text-slate-400">P{log.protein_g} F{log.fat_g} C{log.carbohydrates_g}</div>
-                                        </div>
+                                        {logs.map((log) => {
+                                            const raw = log.ai_analysis_raw as any;
+                                            const emoji = raw?.emoji || "🍽️";
+
+                                            return (
+                                                <div key={log.id} className={`p-4 rounded-xl shadow-sm border ${slotStyles[slot]} flex items-center gap-4`}>
+                                                    <div className="h-12 w-12 bg-white/60 rounded-lg flex items-center justify-center text-2xl">
+                                                        {emoji}
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <h4 className="font-bold text-slate-900">{log.food_name}</h4>
+                                                        <p className="text-xs text-slate-500">{new Date(log.recorded_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })}</p>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className="font-bold text-slate-900">{log.calories} kcal</div>
+                                                        <div className="text-xs text-slate-400">P{log.protein_g} F{log.fat_g} C{log.carbohydrates_g}</div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 );
                             })
@@ -351,30 +463,42 @@ export default async function DashboardPage() {
                 {/* Exercise Logs */}
                 <div>
                     <h2 className="text-sm font-bold text-slate-500 mb-4">今日の運動</h2>
-                    <div className="space-y-3">
-                        {todaysExercises && todaysExercises.length > 0 ? (
-                            todaysExercises.map((log) => {
-                                const raw = log.ai_analysis_raw as any;
-                                const emoji = raw?.emoji || "💪";
-
+                    <div className="space-y-6">
+                        {(todaysExercises && todaysExercises.length > 0) ? (
+                            ['morning', 'afternoon', 'night'].map(slot => {
+                                const logs = exerciseGroups[slot as keyof typeof exerciseGroups];
+                                if (logs.length === 0) return null;
                                 return (
-                                    <div key={log.id} className="p-4 bg-white rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
-                                        <div className="h-12 w-12 bg-slate-50 rounded-lg flex items-center justify-center text-2xl">
-                                            {emoji}
+                                    <div key={slot} className="space-y-3">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-bold text-slate-500">{slotLabels[slot]}</span>
+                                            <div className="h-px flex-1 bg-slate-200"></div>
                                         </div>
-                                        <div className="flex-1">
-                                            <h4 className="font-bold text-slate-900">{log.exercise_name}</h4>
-                                            <p className="text-xs text-slate-500">
-                                                {new Date(log.recorded_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
-                                            </p>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="font-bold text-slate-900">{log.calories_burned} kcal</div>
-                                            <div className="text-xs text-slate-400">
-                                                {log.duration_minutes > 0 ? `${log.duration_minutes}分` : ''}
-                                                {log.sets ? ` / ${log.sets}セット` : ''}
-                                            </div>
-                                        </div>
+                                        {logs.map((log) => {
+                                            const raw = log.ai_analysis_raw as any;
+                                            const emoji = raw?.emoji || "💪";
+
+                                            return (
+                                                <div key={log.id} className={`p-4 rounded-xl shadow-sm border ${slotStyles[slot]} flex items-center gap-4`}>
+                                                    <div className="h-12 w-12 bg-white/60 rounded-lg flex items-center justify-center text-2xl">
+                                                        {emoji}
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <h4 className="font-bold text-slate-900">{log.exercise_name}</h4>
+                                                        <p className="text-xs text-slate-500">
+                                                            {new Date(log.recorded_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })}
+                                                        </p>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className="font-bold text-slate-900">{log.calories_burned} kcal</div>
+                                                        <div className="text-xs text-slate-400">
+                                                            {log.duration_minutes > 0 ? `${log.duration_minutes}分` : ''}
+                                                            {log.sets ? ` / ${log.sets}セット` : ''}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 );
                             })

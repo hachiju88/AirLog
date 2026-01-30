@@ -17,7 +17,7 @@ type CalorieData = {
     calories: number;
 };
 
-export function MealCalorieChart({ data, target }: { data: CalorieData[], target: number }) {
+export function MealCalorieChart({ data, target, period }: { data: CalorieData[], target: number, period: string }) {
     if (!data || data.length === 0) {
         return (
             <Card className="h-[300px] flex items-center justify-center text-slate-400">
@@ -25,6 +25,15 @@ export function MealCalorieChart({ data, target }: { data: CalorieData[], target
             </Card>
         );
     }
+
+    const showDots = period !== 'month' && period !== 'year';
+
+    // Domain Calculation
+    const values = data.map(d => d.calories);
+    const maxVal = Math.max(...values, 0);
+    // Ensure max domain covers target and some padding, rounded to nearest 100
+    let maxDomain = Math.max(maxVal, target) * 1.1;
+    maxDomain = Math.ceil(maxDomain / 100) * 100;
 
     return (
         <Card>
@@ -41,8 +50,14 @@ export function MealCalorieChart({ data, target }: { data: CalorieData[], target
                                 tick={{ fontSize: 10, fill: '#94A3B8' }}
                                 tickLine={false}
                                 axisLine={false}
+                                tickFormatter={(val) => {
+                                    const parts = val.split('/');
+                                    if (parts.length >= 3) return `${parts[1]}/${parts[2]}`;
+                                    return val;
+                                }}
                             />
                             <YAxis
+                                domain={[0, maxDomain]}
                                 tick={{ fontSize: 10, fill: '#94A3B8' }}
                                 tickLine={false}
                                 axisLine={false}
@@ -52,13 +67,13 @@ export function MealCalorieChart({ data, target }: { data: CalorieData[], target
                                 itemStyle={{ color: '#F43F5E', fontWeight: 'bold' }}
                                 labelStyle={{ color: '#64748B', fontSize: '12px', marginBottom: '4px' }}
                             />
-                            <ReferenceLine y={target} stroke="#EF4444" strokeDasharray="3 3" label={{ value: '目標', position: 'insideTopRight', fill: '#EF4444', fontSize: 10 }} />
+                            <ReferenceLine y={target} stroke="#94A3B8" strokeDasharray="3 3" label={{ value: '目標', position: 'insideTopRight', fill: '#94A3B8', fontSize: 10 }} />
                             <Line
                                 type="monotone"
                                 dataKey="calories"
                                 stroke="#F43F5E"
                                 strokeWidth={2}
-                                dot={{ fill: '#F43F5E', r: 3 }}
+                                dot={showDots ? { fill: '#F43F5E', r: 3 } : false}
                                 activeDot={{ r: 5 }}
                             />
                         </LineChart>

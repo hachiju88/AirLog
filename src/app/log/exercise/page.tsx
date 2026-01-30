@@ -1,15 +1,19 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { FavoriteSelector } from "../_components/FavoriteSelector";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+
+import { Suspense, useState, useRef, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Loader2, Mic, Type, Check, X, Trash2, StopCircle, Activity, Timer, Flame, Dumbbell, Repeat, Layers, ChevronLeft } from "lucide-react";
+import { Loader2, Mic, Check, X, StopCircle, ArrowLeft, Clock, Dumbbell, Repeat, Layers } from "lucide-react";
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -21,78 +25,39 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-type ExerciseItem = {
-    name: string;
-    emoji?: string;
-    calories: number;
-    duration_min: number;
-    weight_kg?: number;
-    sets?: number;
-    reps?: number;
-};
-
-export default function ExerciseLogPage() {
+function ExerciseLogContent() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [activeTab, setActiveTab] = useState("voice");
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
-    const [isSaving, setIsSaving] = useState(false);
-    const [showCompleteDialog, setShowCompleteDialog] = useState(false);
-    const [lastActionType, setLastActionType] = useState<'record' | 'draft'>('record');
-    const [lastSavedItems, setLastSavedItems] = useState<ExerciseItem[]>([]);
-
-    // Voice State
     const [isListening, setIsListening] = useState(false);
     const [transcript, setTranscript] = useState("");
     const [interimTranscript, setInterimTranscript] = useState("");
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
     const recognitionRef = useRef<any>(null);
+    const isListeningRef = useRef(false);
 
-    // Manual State
+    // Manual Input State
     const [manualName, setManualName] = useState("");
     const [manualDuration, setManualDuration] = useState("");
-    const [manualWeight, setManualWeight] = useState(""); // 0.5 increments
-    const [manualReps, setManualReps] = useState("");   // 5 increments
-    const [manualSets, setManualSets] = useState("");   // Integer
+    const [manualWeight, setManualWeight] = useState("");
+    const [manualReps, setManualReps] = useState("");
+    const [manualSets, setManualSets] = useState("");
+
+    // Favorites State
+    const [saveToFavorites, setSaveToFavorites] = useState(false);
 
     // Draft State
     const [drafts, setDrafts] = useState<any[]>([]);
-    const searchParams = useSearchParams();
     const [editingId, setEditingId] = useState<string | null>(null);
     const [draftDate, setDraftDate] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
 
-    // Calculate totals
+    // Completion Dialog State
+    const [showCompleteDialog, setShowCompleteDialog] = useState(false);
+    const [lastActionType, setLastActionType] = useState<'record' | 'draft'>('record');
+    const [lastSavedItems, setLastSavedItems] = useState<any[]>([]);
 
-
-    // --- Voice Logic (Same as before) ---
-    useEffect(() => {
-        if (typeof window !== 'undefined' && (window as any).webkitSpeechRecognition) {
-            const SpeechRecognition = (window as any).webkitSpeechRecognition;
-            recognitionRef.current = new SpeechRecognition();
-            recognitionRef.current.continuous = true;
-            recognitionRef.current.interimResults = true;
-            recognitionRef.current.lang = 'ja-JP';
-
-            recognitionRef.current.onresult = (event: any) => {
-                let newFinal = '';
-                let newInterim = '';
-
-                for (let i = event.resultIndex; i < event.results.length; ++i) {
-                    if (event.results[i].isFinal) {
-                        newFinal += event.results[i][0].transcript;
-                    } else {
-                        newInterim += event.results[i][0].transcript;
-                    }
-                }
-
-                if (newFinal) {
-                    setTranscript(prev => prev + newFinal);
-                }
-                setInterimTranscript(newInterim);
-            };
-        }
-    }, []);
-
-    // --- Draft Logic (Same as before) ---
     useEffect(() => {
         const fetchDrafts = async () => {
             const supabase = createClient();
@@ -114,19 +79,7 @@ export default function ExerciseLogPage() {
             }
         };
         fetchDrafts();
-
-        const draftText = searchParams.get('draft_text');
-        const draftId = searchParams.get('draft_id');
-        const dDate = searchParams.get('draft_date');
-
-        if (draftId) setEditingId(draftId);
-        if (dDate) setDraftDate(dDate);
-
-        if (draftText) {
-            setActiveTab('voice');
-            setTranscript(draftText);
-        }
-    }, [searchParams]);
+    }, []);
 
     const loadDraft = (draft: any) => {
         setEditingId(draft.id);
@@ -134,31 +87,182 @@ export default function ExerciseLogPage() {
         const raw = draft.ai_analysis_raw as any;
         const content = raw?.raw_content || draft.exercise_name;
 
-        const params = new URLSearchParams();
-        params.set('draft_id', draft.id);
-        params.set('draft_text', content);
-        params.set('draft_date', draft.recorded_at);
-        router.replace(`?${params.toString()}`);
-
-        setActiveTab('voice');
+        setActiveTab('voice'); // Assume drafts are mostly voice/text
         setTranscript(content);
         toast.info('下書きを読み込みました');
     };
+
+    useEffect(() => {
+        if (typeof window !== 'undefined' && (window as any).webkitSpeechRecognition) {
+            const SpeechRecognition = (window as any).webkitSpeechRecognition;
+            recognitionRef.current = new SpeechRecognition();
+            recognitionRef.current.continuous = true;
+            recognitionRef.current.interimResults = true;
+            recognitionRef.current.lang = 'ja-JP';
+
+            recognitionRef.current.onresult = (event: any) => {
+                let newTranscript = '';
+                let newInterim = '';
+
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        newTranscript += event.results[i][0].transcript;
+                    } else {
+                        newInterim += event.results[i][0].transcript;
+                    }
+                }
+
+                if (newTranscript) {
+                    setTranscript(prev => prev + newTranscript);
+                }
+                setInterimTranscript(newInterim);
+            };
+
+            recognitionRef.current.onend = () => {
+                // Determine if we should restart based on intended state
+                if (isListeningRef.current) {
+                    try {
+                        recognitionRef.current.start();
+                    } catch (e) {
+                        // ignore errors if already started
+                    }
+                }
+            };
+        }
+    }, []);
+
+    // Sync ref
+    useEffect(() => {
+        isListeningRef.current = isListening;
+    }, [isListening]);
 
     const toggleListening = () => {
         if (isListening) {
             recognitionRef.current?.stop();
             setIsListening(false);
-            setInterimTranscript("");
         } else {
             setTranscript("");
-            setInterimTranscript("");
             recognitionRef.current?.start();
             setIsListening(true);
         }
     };
 
-    const saveAsDraft = async (content: string, inputType: 'voice' | 'manual' = 'voice') => {
+    const handleFavoriteSelect = (item: any) => {
+        // Set manual inputs from favorite content
+        const content = item.content;
+        setManualName(content.name || "");
+        setManualDuration(content.duration?.toString() || "");
+        setManualWeight(content.weight?.toString() || "");
+        setManualReps(content.reps?.toString() || "");
+        setManualSets(content.sets?.toString() || "");
+
+        // Switch to manual tab
+        setActiveTab('manual');
+        toast.info(`My Menuから「${item.name}」を読み込みました`);
+    };
+
+    const handleRecord = async (source: 'manual' | 'voice', content?: string) => {
+        setIsAnalyzing(true);
+        try {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                toast.error("ログインが必要です");
+                return;
+            }
+
+            let itemsToSave: any[] = [];
+
+            if (source === 'manual') {
+                if (!manualName) {
+                    toast.error("種目名を入力してください");
+                    setIsAnalyzing(false);
+                    return;
+                }
+                itemsToSave = [{
+                    name: manualName,
+                    duration_min: parseInt(manualDuration) || 0,
+                    weight_kg: parseFloat(manualWeight) || 0,
+                    reps: parseInt(manualReps) || 0,
+                    sets: parseInt(manualSets) || 1,
+                    calories: 0 // Estimate later or 0
+                }];
+            } else {
+                // Voice Analysis
+                const text = content || transcript;
+                if (!text) return;
+
+                const response = await fetch('/api/estimate/exercise', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text }),
+                });
+
+                if (!response.ok) throw new Error('解析に失敗しました');
+                const data = await response.json();
+                itemsToSave = data.items || [];
+            }
+
+            // Save to DB
+            const records = itemsToSave.map(item => ({
+                user_id: user.id,
+                exercise_name: item.name,
+                duration_minutes: item.duration_min,
+                sets: item.sets,
+                reps_per_set: item.reps, // manual uses 'reps'
+                weight_kg: item.weight_kg,
+                calories_burned: item.calories || (item.duration_min * 5),
+                input_type: source,
+                ai_analysis_raw: { ...item, status: 'completed' },
+                recorded_at: draftDate || new Date().toISOString()
+            }));
+
+            if (editingId) {
+                await supabase.from('exercise_logs').delete().eq('id', editingId);
+            }
+            const { error } = await supabase.from('exercise_logs').insert(records);
+            if (error) throw error;
+
+            // Save to Favorites if checked
+            if (saveToFavorites && source === 'manual' && itemsToSave.length > 0) {
+                const itemToFav = itemsToSave[0]; // Usually one item for manual
+                const favoriteData = {
+                    user_id: user.id,
+                    type: 'exercise',
+                    name: itemToFav.name,
+                    content: {
+                        name: itemToFav.name,
+                        duration: itemToFav.duration_min,
+                        weight: itemToFav.weight_kg,
+                        reps: itemToFav.reps || itemToFav.reps_per_set,
+                        sets: itemToFav.sets,
+                        calories: itemToFav.calories_burned
+                    }
+                };
+                await supabase.from('favorites').insert([favoriteData]);
+                toast.success("My Menuに登録しました");
+                setSaveToFavorites(false); // Reset
+            }
+
+            setLastSavedItems(itemsToSave);
+            setLastActionType('record');
+            setShowCompleteDialog(true);
+
+            // Cleanup drafts/inputs if successful
+            if (source === 'voice') {
+                setTranscript("");
+                setInterimTranscript("");
+            }
+
+        } catch (e) {
+            console.error(e);
+            toast.error("保存に失敗しました");
+        } finally {
+            setIsAnalyzing(false);
+        }
+    };
+
+    const saveAsDraft = async (content: string) => {
         try {
             const supabase = createClient();
             const { data: { user } } = await supabase.auth.getUser();
@@ -169,213 +273,24 @@ export default function ExerciseLogPage() {
                 exercise_name: content,
                 duration_minutes: 0,
                 calories_burned: 0,
-                input_type: inputType,
-                ai_analysis_raw: { status: 'pending', raw_content: content },
-                recorded_at: draftDate || new Date().toISOString()
+                ai_analysis_raw: { status: 'pending', raw_content: content }
             };
 
-            if (editingId) {
-                await supabase.from('exercise_logs').update(record).eq('id', editingId);
-            } else {
-                await supabase.from('exercise_logs').insert([record]);
+            const { data, error } = await supabase.from('exercise_logs').insert([record]).select();
+            if (error) throw error;
+            if (data) {
+                setDrafts(prev => [data[0], ...prev]);
             }
 
-            // toast.success('下書きとして保存しました');
-            // Show Dialog instead of redirect
+            setLastSavedItems([{ name: '下書き', emoji: '📝', duration_min: 0, calories: 0 }]); // Dummy for dialog
             setLastActionType('draft');
-            setLastSavedItems([{
-                name: content,
-                calories: 0,
-                duration_min: 0,
-                emoji: "📝"
-            }]);
             setShowCompleteDialog(true);
-
-            // Refetch drafts to update list immediately
-            const { data: pendingLogs } = await supabase
-                .from('exercise_logs')
-                .select('*')
-                .eq('user_id', user.id)
-                .order('recorded_at', { ascending: false });
-
-            if (pendingLogs) {
-                const validDrafts = pendingLogs.filter(log => {
-                    const raw = log.ai_analysis_raw as any;
-                    return raw?.status === 'pending';
-                });
-                setDrafts(validDrafts);
-            }
+            setTranscript("");
+            setInterimTranscript("");
         } catch (e) {
             console.error(e);
             toast.error('保存に失敗しました');
         }
-    };
-
-    const handleRecord = async (source: 'manual' | 'voice', text: string, manualData?: any) => {
-        setIsAnalyzing(true);
-        setIsSaving(true);
-        try {
-            // 1. Analyze / Construct Data
-            let itemsToSave: ExerciseItem[] = [];
-
-            if (source === 'manual') {
-                // Try to use API to estimate calories even for manual
-                // Construct natural language string for better parsing
-                // e.g. "Running 30min", "Bench Press 60kg 10reps 3sets"
-                const query = text;
-
-                const response = await fetch('/api/estimate/exercise', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: query }),
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.items && data.items.length > 0 && data.items[0].name !== "解析エラー") {
-                        // Use AI result but override with manual exact values if they exist
-                        // Actually, manual inputs are reliable for count/weight, AI is for calories.
-                        itemsToSave = data.items.map((item: any) => ({
-                            ...item,
-                            // If manual data provided, ensure it matches (though text query should handle it)
-                            // We trust AI for calories based on the text we sent.
-                        }));
-                    } else {
-                        // Fallback if AI fails: use manual data with 0 cal
-                        itemsToSave = [{
-                            name: manualData.name,
-                            duration_min: manualData.duration || 0,
-                            weight_kg: manualData.weight || 0,
-                            reps: manualData.reps || 0,
-                            sets: manualData.sets || 0,
-                            calories: 0,
-                            emoji: "💪"
-                        }];
-                    }
-                } else {
-                    // Fallback if API fails
-                    itemsToSave = [{
-                        name: manualData.name,
-                        duration_min: manualData.duration || 0,
-                        weight_kg: manualData.weight || 0,
-                        reps: manualData.reps || 0,
-                        sets: manualData.sets || 0,
-                        calories: 0,
-                        emoji: "💪"
-                    }];
-                }
-            } else {
-                // Voice
-                const response = await fetch('/api/estimate/exercise', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text }),
-                });
-
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.error || `API Error: ${response.status}`);
-                }
-
-                const data = await response.json();
-
-                if (data.items && data.items[0]?.name === "解析エラー") {
-                    toast.error("解析できませんでした。別の表現を試すか下書き保存してください。");
-                    return;
-                }
-                itemsToSave = data.items || [];
-            }
-
-            if (itemsToSave.length === 0) {
-                toast.error("記録するデータがありません");
-                return;
-            }
-
-            // 2. Insert to DB
-            const supabase = createClient();
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return;
-
-            const records = itemsToSave.map(item => ({
-                user_id: user.id,
-                exercise_name: item.name,
-                duration_minutes: item.duration_min,
-                weight_kg: item.weight_kg || null,
-                sets: item.sets || null,
-                reps_per_set: item.reps || null,
-                calories_burned: item.calories,
-                input_type: source,
-                ai_analysis_raw: item,
-                recorded_at: draftDate || new Date().toISOString()
-            }));
-
-            if (editingId) {
-                await supabase.from('exercise_logs').delete().eq('id', editingId);
-                await supabase.from('exercise_logs').insert(records);
-            } else {
-                await supabase.from('exercise_logs').insert(records);
-            }
-
-            // 3. Show Success
-            setLastActionType('record');
-            setLastSavedItems(itemsToSave);
-            setShowCompleteDialog(true);
-
-            // Clear inputs
-            setTranscript("");
-            setInterimTranscript("");
-            if (source === 'manual') {
-                // We don't clear manual inputs yet, user might want to continue or check popup options
-                // Popup options: "Continue" (reset inputs), "Return" (go dashboard)
-            }
-
-        } catch (e: any) {
-            console.error(e);
-            toast.error(e.message || "保存に失敗しました");
-        } finally {
-            setIsAnalyzing(false);
-            setIsSaving(false);
-        }
-    };
-
-    const handleManualRecord = () => {
-        if (!manualName) {
-            toast.error("運動名は必須です");
-            return;
-        }
-
-        // Construct natural text
-        let query = manualName;
-        if (manualWeight && manualWeight !== '0') query += ` ${manualWeight}kg`;
-        if (manualReps && manualReps !== '0') query += ` ${manualReps}回`;
-        if (manualSets && manualSets !== '0') query += ` ${manualSets}セット`;
-        if (manualDuration && manualDuration !== '0') query += ` ${manualDuration}分`;
-
-        const manualData = {
-            name: manualName,
-            duration: parseInt(manualDuration) || 0,
-            weight: parseFloat(manualWeight) || 0,
-            reps: parseInt(manualReps) || 0,
-            sets: parseInt(manualSets) || 0
-        };
-
-        handleRecord('manual', query, manualData);
-    };
-
-
-
-    const handleManualDraft = () => {
-        if (!manualName) {
-            toast.error("運動名は必須です");
-            return;
-        }
-        let query = manualName;
-        if (manualWeight && manualWeight !== '0') query += ` ${manualWeight}kg`;
-        if (manualReps && manualReps !== '0') query += ` ${manualReps}回`;
-        if (manualSets && manualSets !== '0') query += ` ${manualSets}セット`;
-        if (manualDuration && manualDuration !== '0') query += ` ${manualDuration}分`;
-
-        saveAsDraft(query, 'manual');
     };
 
     const deleteDraft = (e: React.MouseEvent, id: string) => {
@@ -393,156 +308,29 @@ export default function ExerciseLogPage() {
         setDeletingId(null);
     };
 
-    // Helper options
-    const weightOptions = Array.from({ length: 400 }, (_, i) => (i * 0.5).toFixed(1)); // 0.0 - 200.0
-    const repsOptions = Array.from({ length: 20 }, (_, i) => (i + 1) * 5); // 5, 10 ... 100
-    const setsOptions = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    const durationOptions = [5, 10, 15, 20, 30, 40, 45, 50, 60, 90, 120];
-
-    const exerciseSuggestions = [
-        "ランニング", "ウォーキング", "筋トレ", "ヨガ", "サイクリング", "水泳",
-        "ベンチプレス", "スクワット", "デッドリフト", "腹筋", "腕立て伏せ",
-        "ストレッチ", "ハイキング", "ダンス", "縄跳び"
-    ];
-
     return (
-        <div className="min-h-screen bg-slate-50 relative pb-safe">
-            <div className="px-6 py-4 bg-cyan-50 border-b border-cyan-100 shadow-sm flex items-center justify-between sticky top-0 z-10">
-                <Button variant="ghost" size="icon" onClick={() => router.back()} className="-ml-2 hover:bg-cyan-100 text-cyan-900">
-                    <ChevronLeft className="h-6 w-6" />
+        <div className="min-h-screen bg-slate-50 pb-safe">
+            <div className="px-6 py-4 bg-white border-b border-slate-100 sticky top-0 z-10 flex items-center justify-between">
+                <Button variant="ghost" size="icon" onClick={() => router.back()} className="-ml-2">
+                    <ArrowLeft className="h-6 w-6" />
                 </Button>
-                <h1 className="font-bold text-xl text-cyan-900 flex items-center gap-2">
-                    <Flame className="h-5 w-5" />
-                    運動を記録
-                </h1>
+                <h1 className="font-bold text-xl text-slate-800">運動を記録</h1>
                 <div className="w-10" />
             </div>
 
             <main className="p-4 space-y-6">
                 <Tabs defaultValue="voice" value={activeTab} onValueChange={setActiveTab} className="w-full">
                     <TabsList className="grid w-full grid-cols-2 mb-4">
-                        <TabsTrigger value="voice"><Mic className="h-4 w-4 mr-2" />音声入力</TabsTrigger>
-                        <TabsTrigger value="manual"><Type className="h-4 w-4 mr-2" />手入力</TabsTrigger>
+                        <TabsTrigger value="voice">音声</TabsTrigger>
+                        <TabsTrigger value="manual">手入力</TabsTrigger>
                     </TabsList>
 
-                    {/* MANUAL INPUT */}
-                    <TabsContent value="manual" className="space-y-4">
-                        <div className="space-y-4 bg-cyan-50 p-5 rounded-xl border border-cyan-100/50 shadow-sm">
-                            <div>
-                                <label className="text-sm font-bold text-slate-700">運動名 <span className="text-red-500">*</span></label>
-                                <Input
-                                    placeholder="例: ベンチプレス"
-                                    list="exercise-suggestions"
-                                    value={manualName} onChange={e => setManualName(e.target.value)}
-                                    className="mt-1 h-12 text-lg bg-white"
-                                />
-                                <datalist id="exercise-suggestions">
-                                    {exerciseSuggestions.map(ex => (
-                                        <option key={ex} value={ex} />
-                                    ))}
-                                </datalist>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-xs font-medium text-slate-500">時間 (分)</label>
-                                    <Select value={manualDuration} onValueChange={setManualDuration}>
-                                        <SelectTrigger className="mt-1 w-full bg-white">
-                                            <SelectValue placeholder="-" />
-                                        </SelectTrigger>
-                                        <SelectContent className="max-h-60">
-                                            <SelectItem value="0">-</SelectItem>
-                                            {durationOptions.map(d => (
-                                                <SelectItem key={d} value={d.toString()}>{d} 分</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div>
-                                    <label className="text-xs font-medium text-slate-500">重量 (kg)</label>
-                                    <Select value={manualWeight} onValueChange={setManualWeight}>
-                                        <SelectTrigger className="mt-1 w-full bg-white">
-                                            <SelectValue placeholder="-" />
-                                        </SelectTrigger>
-                                        <SelectContent className="max-h-60">
-                                            <SelectItem value="0">-</SelectItem>
-                                            {weightOptions.map(w => (
-                                                <SelectItem key={w} value={w}>{w} kg</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div>
-                                    <label className="text-xs font-medium text-slate-500">回数 (reps)</label>
-                                    <Select value={manualReps} onValueChange={setManualReps}>
-                                        <SelectTrigger className="mt-1 w-full bg-white">
-                                            <SelectValue placeholder="-" />
-                                        </SelectTrigger>
-                                        <SelectContent className="max-h-60">
-                                            <SelectItem value="0">-</SelectItem>
-                                            {repsOptions.map(r => (
-                                                <SelectItem key={r} value={r.toString()}>{r} 回</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div>
-                                    <label className="text-xs font-medium text-slate-500">セット数</label>
-                                    <Select value={manualSets} onValueChange={setManualSets}>
-                                        <SelectTrigger className="mt-1 w-full bg-white">
-                                            <SelectValue placeholder="-" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="0">-</SelectItem>
-                                            {setsOptions.map(s => (
-                                                <SelectItem key={s} value={s.toString()}>{s} セット</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            </div>
-
-                        </div>
-
-                        <div className="flex gap-2">
-                            <Button className="flex-1 h-12 bg-cyan-600 hover:bg-cyan-700 text-white text-base" onClick={handleManualRecord} disabled={isAnalyzing || isSaving}>
-                                {isAnalyzing || isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
-                                記録
-                            </Button>
-                            <Button className="flex-1 h-12 bg-cyan-50 text-cyan-700 hover:bg-cyan-100 border-cyan-200" variant="outline" onClick={handleManualDraft} disabled={isAnalyzing || isSaving}>
-                                下書き
-                            </Button>
-                        </div>
-                        {/* Drafts List */}
-                        {drafts.length > 0 && (
-                            <div className="mt-6">
-                                <h3 className="text-xs font-bold text-slate-500 mb-2">再試行可能な下書き</h3>
-                                <div className="space-y-2">
-                                    {drafts.map(draft => (
-                                        <div key={draft.id}
-                                            onClick={() => loadDraft(draft)}
-                                            className="p-3 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 active:bg-slate-50 cursor-pointer flex justify-between items-center"
-                                        >
-                                            <span className="truncate flex-1 font-medium">
-                                                {draft.ai_analysis_raw?.raw_content || draft.exercise_name}
-                                            </span>
-                                            <div className="flex items-center">
-                                                <span className="text-xs text-slate-400 mx-2 whitespace-nowrap">
-                                                    {new Date(draft.recorded_at).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                                </span>
-                                                <Button size="icon" variant="ghost" className="h-6 w-6 text-slate-300 hover:text-red-500 hover:bg-red-50" onClick={(e) => deleteDraft(e, draft.id)}>
-                                                    <X className="h-3 w-3" />
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </TabsContent>
-
-                    {/* VOICE INPUT */}
                     <TabsContent value="voice" className="space-y-4">
+                        {/* Favorite Selector for Voice Tab */}
+                        <div className="flex justify-end">
+                            <FavoriteSelector type="exercise" onSelect={handleFavoriteSelect} />
+                        </div>
+
                         <div className={`p-6 rounded-xl border-2 ${isListening ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'} transition-colors text-center relative`}>
                             {/* Clear Button */}
                             {(transcript || interimTranscript) && !isListening && (
@@ -600,32 +388,96 @@ export default function ExerciseLogPage() {
                             </Button>
                         </div>
 
-                        {/* Recent Drafts */}
-                        {drafts.length > 0 && (
-                            <div className="mt-6">
-                                <h3 className="text-xs font-bold text-slate-500 mb-2">再試行可能な下書き</h3>
-                                <div className="space-y-2">
-                                    {drafts.map(draft => (
-                                        <div key={draft.id}
-                                            onClick={() => loadDraft(draft)}
-                                            className="p-3 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 active:bg-slate-50 cursor-pointer flex justify-between items-center"
-                                        >
-                                            <span className="truncate flex-1 font-medium">{draft.ai_analysis_raw?.raw_content || draft.exercise_name}</span>
-                                            <div className="flex items-center">
-                                                <span className="text-xs text-slate-400 mx-2 whitespace-nowrap">
-                                                    {new Date(draft.recorded_at).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                                </span>
-                                                <Button size="icon" variant="ghost" className="h-6 w-6 text-slate-300 hover:text-red-500 hover:bg-red-50" onClick={(e) => deleteDraft(e, draft.id)}>
-                                                    <X className="h-3 w-3" />
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    ))}
+
+                    </TabsContent>
+
+                    <TabsContent value="manual" className="space-y-4">
+                        {/* Favorite Selector Above Card */}
+                        <div className="flex justify-end">
+                            <FavoriteSelector type="exercise" onSelect={handleFavoriteSelect} />
+                        </div>
+
+                        <div className="space-y-4 bg-cyan-50 p-5 rounded-xl border border-cyan-100/50 shadow-sm">
+                            <div>
+                                <label className="text-sm font-bold text-slate-700 mb-1 block">種目名</label>
+                                <Input placeholder="例: ベンチプレス" value={manualName} onChange={(e) => setManualName(e.target.value)} className="bg-white" />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-sm font-bold text-slate-700 mb-1 block flex items-center"><Clock className="h-3 w-3 mr-1" /> 時間 (分)</label>
+                                    <Input type="number" placeholder="0" value={manualDuration} onChange={(e) => setManualDuration(e.target.value)} className="bg-white" />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-bold text-slate-700 mb-1 block flex items-center"><Dumbbell className="h-3 w-3 mr-1" /> 重量 (kg)</label>
+                                    <Input type="number" placeholder="0" value={manualWeight} onChange={(e) => setManualWeight(e.target.value)} className="bg-white" />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-bold text-slate-700 mb-1 block flex items-center"><Repeat className="h-3 w-3 mr-1" /> 回数</label>
+                                    <Input type="number" placeholder="0" value={manualReps} onChange={(e) => setManualReps(e.target.value)} className="bg-white" />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-bold text-slate-700 mb-1 block flex items-center"><Layers className="h-3 w-3 mr-1" /> セット数</label>
+                                    <Input type="number" placeholder="1" value={manualSets} onChange={(e) => setManualSets(e.target.value)} className="bg-white" />
                                 </div>
                             </div>
-                        )}
+
+                            <div className="flex items-center space-x-2 pt-2 border-t border-cyan-100">
+                                <Checkbox id="save-fav" checked={saveToFavorites} onCheckedChange={(c) => setSaveToFavorites(!!c)} />
+                                <Label htmlFor="save-fav" className="text-sm text-slate-600 cursor-pointer">
+                                    この内容をMy Menuにも登録する
+                                </Label>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <Button className="h-12 bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-lg shadow-md" onClick={() => handleRecord('manual')} disabled={isAnalyzing}>
+                                {isAnalyzing ? <Loader2 className="animate-spin mr-2" /> : <Check className="mr-2" />}
+                                記録する
+                            </Button>
+                            <Button
+                                variant="outline"
+                                className="h-12 border-cyan-200 text-cyan-700 bg-cyan-50"
+                                onClick={() => {
+                                    const text = `${manualName} ${manualDuration ? manualDuration + '分' : ''} ${manualWeight ? manualWeight + 'kg' : ''} ${manualReps ? manualReps + '回' : ''} ${manualSets ? manualSets + 'セット' : ''}`.trim();
+                                    if (!text) {
+                                        toast.error("内容が空です");
+                                        return;
+                                    }
+                                    saveAsDraft(text);
+                                }}
+                                disabled={isAnalyzing}
+                            >
+                                下書き
+                            </Button>
+                        </div>
                     </TabsContent>
                 </Tabs>
+
+                {/* Recent Drafts (Common) */}
+                {drafts.length > 0 && (
+                    <div className="mt-6 border-t border-slate-100 pt-6">
+                        <h3 className="text-xs font-bold text-slate-500 mb-2">再試行可能な下書き</h3>
+                        <div className="space-y-2">
+                            {drafts.map(draft => (
+                                <div key={draft.id}
+                                    onClick={() => loadDraft(draft)}
+                                    className="p-3 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 active:bg-slate-50 cursor-pointer flex justify-between items-center"
+                                >
+                                    <span className="truncate flex-1 font-medium">{draft.ai_analysis_raw?.raw_content || draft.exercise_name}</span>
+                                    <div className="flex items-center">
+                                        <span className="text-xs text-slate-400 mx-2 whitespace-nowrap">
+                                            {new Date(draft.recorded_at).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })}
+                                        </span>
+                                        <Button size="icon" variant="ghost" className="h-6 w-6 text-slate-300 hover:text-red-500 hover:bg-red-50" onClick={(e) => deleteDraft(e, draft.id)}>
+                                            <X className="h-3 w-3" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* Dialog */}
                 <AlertDialog open={showCompleteDialog} onOpenChange={setShowCompleteDialog}>
@@ -700,6 +552,14 @@ export default function ExerciseLogPage() {
                     </AlertDialogContent>
                 </AlertDialog>
             </main>
-        </div >
+        </div>
+    );
+}
+
+export default function ExerciseLogPage() {
+    return (
+        <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-cyan-600" /></div>}>
+            <ExerciseLogContent />
+        </Suspense>
     );
 }
