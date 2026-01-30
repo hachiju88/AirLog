@@ -14,6 +14,16 @@ CREATE TABLE profiles (
   activity_level INTEGER DEFAULT 1 -- 1:Low, 2:Medium, 3:High
 );
 
+-- 1.5 Favorites (My Menu)
+CREATE TABLE favorites (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()),
+  type TEXT NOT NULL, -- 'meal' or 'exercise'
+  name TEXT NOT NULL,
+  content JSONB NOT NULL -- Full item details for restoration
+);
+
 -- 2. Health Logs (Weight, Body Composition)
 CREATE TABLE health_logs (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -23,6 +33,13 @@ CREATE TABLE health_logs (
   bmi FLOAT,
   body_fat_percentage FLOAT,
   muscle_mass_kg FLOAT,
+  visceral_fat_rating FLOAT,
+  basal_metabolic_rate FLOAT,
+  body_water_percentage FLOAT,
+  bone_mass_kg FLOAT,
+  protein_percentage FLOAT,
+  metabolic_age INTEGER,
+  lean_body_mass_kg FLOAT,
   source TEXT DEFAULT 'manual' -- 'manual', 'bluetooth'
 );
 
@@ -59,6 +76,7 @@ CREATE TABLE exercise_logs (
 );
 
 -- Indexes for performance
+CREATE INDEX idx_favorites_user_type ON favorites (user_id, type);
 CREATE INDEX idx_health_logs_user_date ON health_logs (user_id, recorded_at DESC);
 CREATE INDEX idx_meal_logs_user_date ON meal_logs (user_id, recorded_at DESC);
 CREATE INDEX idx_exercise_logs_user_date ON exercise_logs (user_id, recorded_at DESC);
@@ -68,9 +86,11 @@ ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE health_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE meal_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE exercise_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE favorites ENABLE ROW LEVEL SECURITY;
 
 -- Policies
 CREATE POLICY "Users can manage their own profile" ON profiles FOR ALL USING (auth.uid() = id);
 CREATE POLICY "Users can manage their own health logs" ON health_logs FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users can manage their own meal logs" ON meal_logs FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users can manage their own exercise logs" ON exercise_logs FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage their own favorites" ON favorites FOR ALL USING (auth.uid() = user_id);

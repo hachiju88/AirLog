@@ -10,6 +10,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { toast } from "sonner";
 import { Eye, EyeOff } from "lucide-react";
+import { useSwipeGesture } from "@/hooks/useSwipeGesture";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -24,6 +25,23 @@ export default function LoginPage() {
     // For now, stick to Email/Pass flow.
 
     const supabase = createClient();
+
+    /** タブの順序 */
+    const TAB_ORDER = ['login', 'signup'];
+    const [activeTab, setActiveTab] = useState('login');
+
+    /** スワイプジェスチャーref */
+    const swipeRef = useSwipeGesture<HTMLDivElement>({
+        onSwipeLeft: () => {
+            const idx = TAB_ORDER.indexOf(activeTab);
+            if (idx < TAB_ORDER.length - 1) setActiveTab(TAB_ORDER[idx + 1]);
+        },
+        onSwipeRight: () => {
+            const idx = TAB_ORDER.indexOf(activeTab);
+            if (idx > 0) setActiveTab(TAB_ORDER[idx - 1]);
+        },
+        threshold: 50
+    });
 
     const checkProfileAndRedirect = async () => {
         const { data: { user } } = await supabase.auth.getUser();
@@ -142,99 +160,101 @@ export default function LoginPage() {
                         <div className="flex-1 border-t border-slate-300" />
                     </div>
 
-                    <Tabs defaultValue="login" className="w-full">
-                        <TabsList className="grid w-full grid-cols-2 mb-4">
-                            <TabsTrigger value="login">ログイン</TabsTrigger>
-                            <TabsTrigger value="signup">新規登録</TabsTrigger>
-                        </TabsList>
+                    <div ref={swipeRef} className="touch-pan-y">
+                        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                            <TabsList className="grid w-full grid-cols-2 mb-4">
+                                <TabsTrigger value="login">ログイン</TabsTrigger>
+                                <TabsTrigger value="signup">新規登録</TabsTrigger>
+                            </TabsList>
 
-                        <TabsContent value="login">
-                            <form onSubmit={handleLogin} className="space-y-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="email">メールアドレス</Label>
-                                    <Input
-                                        id="email" type="email" placeholder="name@example.com"
-                                        value={email} onChange={(e) => setEmail(e.target.value)} required
-                                        className="bg-white"
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="password">パスワード</Label>
-                                    <div className="relative">
+                            <TabsContent value="login">
+                                <form onSubmit={handleLogin} className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="email">メールアドレス</Label>
                                         <Input
-                                            id="password" type={showPassword ? "text" : "password"}
-                                            value={password} onChange={(e) => setPassword(e.target.value)} required
-                                            className="bg-white pr-10"
+                                            id="email" type="email" placeholder="name@example.com"
+                                            value={email} onChange={(e) => setEmail(e.target.value)} required
+                                            className="bg-white"
                                         />
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon"
-                                            className="absolute right-0 top-0 h-full px-3 py-1 hover:bg-transparent"
-                                            onClick={() => setShowPassword(!showPassword)}
-                                        >
-                                            {showPassword ? (
-                                                <EyeOff className="h-4 w-4 text-slate-400" />
-                                            ) : (
-                                                <Eye className="h-4 w-4 text-slate-400" />
-                                            )}
-                                            <span className="sr-only">
-                                                {showPassword ? "パスワードを隠す" : "パスワードを表示"}
-                                            </span>
-                                        </Button>
                                     </div>
-                                </div>
-                                <Button type="submit" className="w-full" disabled={loading}>
-                                    {loading ? '処理中...' : 'ログイン'}
-                                </Button>
-                            </form>
-                        </TabsContent>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="password">パスワード</Label>
+                                        <div className="relative">
+                                            <Input
+                                                id="password" type={showPassword ? "text" : "password"}
+                                                value={password} onChange={(e) => setPassword(e.target.value)} required
+                                                className="bg-white pr-10"
+                                            />
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="absolute right-0 top-0 h-full px-3 py-1 hover:bg-transparent"
+                                                onClick={() => setShowPassword(!showPassword)}
+                                            >
+                                                {showPassword ? (
+                                                    <EyeOff className="h-4 w-4 text-slate-400" />
+                                                ) : (
+                                                    <Eye className="h-4 w-4 text-slate-400" />
+                                                )}
+                                                <span className="sr-only">
+                                                    {showPassword ? "パスワードを隠す" : "パスワードを表示"}
+                                                </span>
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <Button type="submit" className="w-full" disabled={loading}>
+                                        {loading ? '処理中...' : 'ログイン'}
+                                    </Button>
+                                </form>
+                            </TabsContent>
 
-                        <TabsContent value="signup">
-                            <form onSubmit={handleSignUp} className="space-y-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="signup-email">メールアドレス</Label>
-                                    <Input
-                                        id="signup-email" type="email" placeholder="name@example.com"
-                                        value={email} onChange={(e) => setEmail(e.target.value)} required
-                                        className="bg-white"
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="signup-password">パスワード</Label>
-                                    <div className="relative">
+                            <TabsContent value="signup">
+                                <form onSubmit={handleSignUp} className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="signup-email">メールアドレス</Label>
                                         <Input
-                                            id="signup-password" type={showSignupPassword ? "text" : "password"}
-                                            value={password} onChange={(e) => setPassword(e.target.value)} required
-                                            className="bg-white pr-10"
+                                            id="signup-email" type="email" placeholder="name@example.com"
+                                            value={email} onChange={(e) => setEmail(e.target.value)} required
+                                            className="bg-white"
                                         />
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon"
-                                            className="absolute right-0 top-0 h-full px-3 py-1 hover:bg-transparent"
-                                            onClick={() => setShowSignupPassword(!showSignupPassword)}
-                                        >
-                                            {showSignupPassword ? (
-                                                <EyeOff className="h-4 w-4 text-slate-400" />
-                                            ) : (
-                                                <Eye className="h-4 w-4 text-slate-400" />
-                                            )}
-                                            <span className="sr-only">
-                                                {showSignupPassword ? "パスワードを隠す" : "パスワードを表示"}
-                                            </span>
-                                        </Button>
                                     </div>
-                                </div>
-                                <Button type="submit" className="w-full bg-slate-800 hover:bg-slate-900 text-white" disabled={loading}>
-                                    {loading ? '処理中...' : 'アカウント作成'}
-                                </Button>
-                                <p className="text-xs text-center text-slate-500 mt-2">
-                                    ※登録確認メールが送信されます
-                                </p>
-                            </form>
-                        </TabsContent>
-                    </Tabs>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="signup-password">パスワード</Label>
+                                        <div className="relative">
+                                            <Input
+                                                id="signup-password" type={showSignupPassword ? "text" : "password"}
+                                                value={password} onChange={(e) => setPassword(e.target.value)} required
+                                                className="bg-white pr-10"
+                                            />
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="absolute right-0 top-0 h-full px-3 py-1 hover:bg-transparent"
+                                                onClick={() => setShowSignupPassword(!showSignupPassword)}
+                                            >
+                                                {showSignupPassword ? (
+                                                    <EyeOff className="h-4 w-4 text-slate-400" />
+                                                ) : (
+                                                    <Eye className="h-4 w-4 text-slate-400" />
+                                                )}
+                                                <span className="sr-only">
+                                                    {showSignupPassword ? "パスワードを隠す" : "パスワードを表示"}
+                                                </span>
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <Button type="submit" className="w-full bg-slate-800 hover:bg-slate-900 text-white" disabled={loading}>
+                                        {loading ? '処理中...' : 'アカウント作成'}
+                                    </Button>
+                                    <p className="text-xs text-center text-slate-500 mt-2">
+                                        ※登録確認メールが送信されます
+                                    </p>
+                                </form>
+                            </TabsContent>
+                        </Tabs>
+                    </div>
                 </CardContent>
             </Card>
         </div>

@@ -6,13 +6,26 @@ import { Camera, Loader2, Upload } from 'lucide-react';
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
+/**
+ * ProfileAvatarUploadのProps型定義
+ */
 type ProfileAvatarUploadProps = {
+    /** ユーザーID */
     userId: string;
+    /** 現在のアバターURL */
     currentAvatarUrl?: string | null;
+    /** アップロード完了コールバック */
     onUploadComplete: (url: string) => void;
+    /** 追加のCSSclass */
     className?: string;
 };
 
+/**
+ * プロフィールアバターアップロードコンポーネント
+ *
+ * クリックでファイル選択ダイアログを開き、
+ * Supabase Storageに画像をアップロードしてプロフィールを更新。
+ */
 export function ProfileAvatarUpload({ userId, currentAvatarUrl, onUploadComplete, className }: ProfileAvatarUploadProps) {
     const supabase = createClient();
     const [isUploading, setIsUploading] = useState(false);
@@ -22,6 +35,12 @@ export function ProfileAvatarUpload({ userId, currentAvatarUrl, onUploadComplete
     const fallbackUrl = `https://api.dicebear.com/7.x/open-peeps/svg?seed=${userId}`;
     const displayUrl = currentAvatarUrl || fallbackUrl;
 
+    /**
+     * ファイル選択時のハンドラ
+     * バリデーション後、SupabaseにアップロードしてURLを取得
+     *
+     * @param e - ファイル入力のChangeイベント
+     */
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;

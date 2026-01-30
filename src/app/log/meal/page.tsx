@@ -1,17 +1,21 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useState, useRef, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Camera, Mic, Type, Upload, Check, X, Trash2, Plus, StopCircle, ChevronLeft, Utensils } from "lucide-react";
+import { Loader2, Camera, Mic, Check, X, Trash2, StopCircle, Utensils, Star } from "lucide-react";
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { createClient } from "@/lib/supabase/client";
 import { cn, compressImage } from "@/lib/utils";
+import { FavoriteSelector } from "../_components/FavoriteSelector";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
+import { LogPageHeader } from "@/components/log";
+import { useSwipeGesture } from "@/hooks/useSwipeGesture";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -23,24 +27,104 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+
+/**
+ * 食事アイテムの型定義
+ * AI解析結果や手入力から生成される個々の食品/料理を表す
+ */
 type MealItem = {
+    /** 食品・料理名 */
     name: string;
+    /** 食品に対応する絵文字 */
     emoji?: string;
+    /** カロリー (kcal) */
     calories: number;
+    /** タンパク質 (g) */
     protein: number;
+    /** 脂質 (g) */
     fat: number;
+    /** 炭水化物 (g) */
     carbs: number;
+    /** 食物繊維 (g) */
     fiber: number;
+    /** 塩分 (g) */
     salt: number;
+    /** 分量倍率 (1.0 = 標準量) */
     portion: number;
 };
 
-export default function MealLogPage() {
+/**
+ * 食事記録ページのメインコンテンツコンポーネント
+ *
+ * 写真撮影・音声入力・テキスト入力の3種類の方法で
+ * 食事を記録できる。AI解析で栄養価を自動計算。
+ */
+function MealLogContent() {
+    // ...
+    // Favorites State
+    // Bulk save removed, now single item save only.
+
+    /**
+     * My Menuから選択されたアイテムを読み込む
+     *
+     * @param item - 選択されたお気に入りアイテム
+     */
+    const handleFavoriteSelect = (item: any) => {
+        // item.content can be a single object or an array of items
+        // If it's a single object (old schema maybe?), wrap it. 
+        // But for "Meal", content should ideally be { items: [...] } or just an array.
+        // Let's assume content is the stored JSON.
+
+        let loadedItems: MealItem[] = [];
+
+        if (item.content.items && Array.isArray(item.content.items)) {
+            loadedItems = item.content.items;
+        } else if (item.content.name) {
+            // Single item structure
+            loadedItems = [{
+                name: item.content.name,
+                calories: item.content.calories || 0,
+                protein: item.content.protein || 0,
+                fat: item.content.fat || 0,
+                carbs: item.content.carbs || 0,
+                fiber: item.content.fiber || 0,
+                salt: item.content.salt || 0,
+                portion: 1.0
+            }];
+        }
+
+        if (loadedItems.length > 0) {
+            setMealItems(prev => [...prev, ...loadedItems]);
+            toast.info(`My Menuから${loadedItems.length}件読み込みました`);
+            setActiveTab('voice'); // Switch to results/voice tab context
+        } else {
+            toast.error("メニューの内容を読み込めませんでした");
+        }
+    };
+
     const router = useRouter();
     const [activeTab, setActiveTab] = useState("photo");
     const [mealItems, setMealItems] = useState<MealItem[]>([]);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+
+    /** タブの順序 */
+    const TAB_ORDER = ['photo', 'voice'];
+
+    /** スワイプジェスチャーref */
+    const swipeRef = useSwipeGesture<HTMLDivElement>({
+        onSwipeLeft: () => {
+            const idx = TAB_ORDER.indexOf(activeTab);
+            if (idx < TAB_ORDER.length - 1) setActiveTab(TAB_ORDER[idx + 1]);
+        },
+        onSwipeRight: () => {
+            const idx = TAB_ORDER.indexOf(activeTab);
+            if (idx > 0) setActiveTab(TAB_ORDER[idx - 1]);
+        },
+        threshold: 50
+    });
+
+
 
     // Photo State
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -73,6 +157,11 @@ export default function MealLogPage() {
         fetchDrafts();
     }, []);
 
+    /**
+     * 下書きを読み込んでフォームに設定する
+     *
+     * @param draft - 読み込む下書きレコード
+     */
     const loadDraft = (draft: any) => {
         setEditingId(draft.id);
         setDraftDate(draft.recorded_at); // Keep date
@@ -104,11 +193,12 @@ export default function MealLogPage() {
 
     // Calculate totals
     const totalCalories = mealItems.reduce((acc, item) => acc + Math.round(item.calories * item.portion), 0);
-    const totalProtein = mealItems.reduce((acc, item) => acc + (item.protein * item.portion), 0);
-    const totalFat = mealItems.reduce((acc, item) => acc + (item.fat * item.portion), 0);
-    const totalCarbs = mealItems.reduce((acc, item) => acc + (item.carbs * item.portion), 0);
 
-    // --- Photo Logic ---
+    /**
+     * ファイル選択時に画像を圧縮してプレビュー表示する
+     *
+     * @param e - ファイル入力のChangeイベント
+     */
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
@@ -122,6 +212,10 @@ export default function MealLogPage() {
         }
     };
 
+    /**
+     * 写真をAIで解析して食事内容を推定する
+     * 結果はmealItemsに追加される
+     */
     const analyzePhoto = async () => {
         if (!imagePreview) return;
         setIsAnalyzing(true);
@@ -156,6 +250,7 @@ export default function MealLogPage() {
     };
 
     // --- Voice Logic ---
+    const isListeningRef = useRef(false);
     useEffect(() => {
         if (typeof window !== 'undefined' && (window as any).webkitSpeechRecognition) {
             const SpeechRecognition = (window as any).webkitSpeechRecognition;
@@ -177,9 +272,27 @@ export default function MealLogPage() {
                     setTextInput(prev => prev + newFinal);
                 }
             };
+
+            recognitionRef.current.onend = () => {
+                if (isListeningRef.current) {
+                    try {
+                        recognitionRef.current.start();
+                    } catch (e) {
+                        // ignore
+                    }
+                }
+            };
         }
     }, []);
 
+    // Sync ref
+    useEffect(() => {
+        isListeningRef.current = isListening;
+    }, [isListening]);
+
+    /**
+     * 音声認識の開始・停止を切り替える
+     */
     const toggleListening = () => {
         if (isListening) {
             recognitionRef.current?.stop();
@@ -191,6 +304,12 @@ export default function MealLogPage() {
         }
     };
 
+    /**
+     * 現在の入力内容を下書きとして保存する
+     *
+     * @param type - 入力タイプ (photo/voice/text)
+     * @param content - 保存するテキスト内容
+     */
     const saveAsDraft = async (type: 'photo' | 'voice' | 'text', content: string) => {
         try {
             const supabase = createClient();
@@ -211,8 +330,10 @@ export default function MealLogPage() {
             };
 
             await supabase.from('meal_logs').insert([record]);
+
+            setTextInput(""); // Reset text input
             toast.success('下書きとして保存しました', { description: '後で編集できます' });
-            router.push('/dashboard');
+            router.push('/dashboard?refresh=1');
             router.refresh();
         } catch (e) {
             console.error(e);
@@ -220,11 +341,20 @@ export default function MealLogPage() {
         }
     };
 
+    /**
+     * 削除確認ダイアログを表示する
+     *
+     * @param e - クリックイベント
+     * @param id - 削除対象の下書きID
+     */
     const deleteDraft = (e: React.MouseEvent, id: string) => {
         e.stopPropagation();
         setDeletingId(id);
     };
 
+    /**
+     * 下書きの削除を実行する
+     */
     const executeDeleteDraft = async () => {
         if (!deletingId) return;
         const id = deletingId;
@@ -235,6 +365,11 @@ export default function MealLogPage() {
         setDeletingId(null);
     };
 
+    /**
+     * テキスト入力をAIで解析して食事内容を推定する
+     *
+     * @param text - 解析するテキスト
+     */
     const analyzeText = async (text: string) => {
         if (!text.trim()) return;
         setIsAnalyzing(true);
@@ -295,18 +430,74 @@ export default function MealLogPage() {
         }
     }, [searchParams]);
 
-    // --- Common Logic ---
+    /**
+     * アイテムの分量を更新する
+     *
+     * @param index - 対象アイテムのインデックス
+     * @param newPortion - 新しい分量倍率
+     */
     const updatePortion = (index: number, newPortion: number) => {
         const newItems = [...mealItems];
         newItems[index].portion = newPortion;
         setMealItems(newItems);
     };
 
+    /**
+     * アイテムをリストから削除する
+     *
+     * @param index - 削除対象のインデックス
+     */
     const removeItem = (index: number) => {
         const newItems = mealItems.filter((_, i) => i !== index);
         setMealItems(newItems);
     };
 
+    /**
+     * 個別のアイテムをMy Menuに保存する
+     *
+     * @param index - 保存対象のインデックス
+     */
+    const handleSaveSingleFavorite = async (index: number) => {
+        const item = mealItems[index];
+        try {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                toast.error("ログインが必要です");
+                return;
+            }
+
+            const favoriteData = {
+                user_id: user.id,
+                type: 'meal',
+                name: item.name,
+                content: {
+                    // Save as single item list for consistency or single object?
+                    // Selector supports single object in 'content' if no 'items' array.
+                    // Let's use single object structure for simplicity of "Single Item"
+                    name: item.name,
+                    calories: item.calories,
+                    protein: item.protein,
+                    fat: item.fat,
+                    carbs: item.carbs,
+                    fiber: item.fiber,
+                    salt: item.salt
+                }
+            };
+
+            const { error } = await supabase.from('favorites').insert([favoriteData]);
+            if (error) throw error;
+            toast.success(`「${item.name}」をMy Menuに登録しました`);
+        } catch (e) {
+            console.error(e);
+            toast.error("保存に失敗しました");
+        }
+    };
+
+    /**
+     * 食事ログをデータベースに保存する
+     * 編集中の下書きがあれば更新、なければ新規作成
+     */
     const handleSave = async () => {
         if (mealItems.length === 0) return;
         setIsSaving(true);
@@ -329,10 +520,10 @@ export default function MealLogPage() {
                 recorded_at: draftDate || new Date().toISOString() // Use draft date if valid
             }));
 
+            // Save to Favorites logic removed as per request (now single item only)
+
             if (editingId) {
-                // Update existing draft (first item logic, simplified for now)
-                // Note: If analysis returns multiple items, we might need to delete old and insert new, or just update the first one.
-                // For safety/simplicity with multi-item results, we'll DELETE the draft and INSERT new records.
+                // Update existing draft
                 await supabase.from('meal_logs').delete().eq('id', editingId);
                 await supabase.from('meal_logs').insert(records);
             } else {
@@ -340,7 +531,7 @@ export default function MealLogPage() {
             }
 
             toast.success('食事ログを保存しました');
-            router.push('/dashboard');
+            router.push('/dashboard?refresh=1');
             router.refresh();
         } catch (e) {
             console.error(e);
@@ -352,26 +543,26 @@ export default function MealLogPage() {
 
     return (
         <div className="min-h-screen bg-slate-50 relative pb-safe">
-            <div className="px-6 py-4 bg-rose-50 border-b border-rose-100 shadow-sm flex items-center justify-between sticky top-0 z-10">
-                <Button variant="ghost" size="icon" onClick={() => router.back()} className="-ml-2 hover:bg-rose-100 text-rose-900">
-                    <ChevronLeft className="h-6 w-6" />
-                </Button>
-                <h1 className="font-bold text-xl text-rose-900 flex items-center gap-2">
-                    <Utensils className="h-5 w-5" />
-                    食事を記録
-                </h1>
-                <div className="w-10" />
-            </div>
+            <LogPageHeader
+                title="食事を記録"
+                icon={Utensils}
+                bgColor="bg-rose-50"
+                borderColor="border-rose-100"
+                textColor="text-rose-900"
+            />
 
-            <main className="p-4 space-y-6">
+            <main ref={swipeRef} className="p-4 space-y-6 touch-pan-y">
                 <Tabs defaultValue="photo" value={activeTab} onValueChange={setActiveTab} className="w-full">
                     <TabsList className="grid w-full grid-cols-2 mb-4">
                         <TabsTrigger value="photo"><Camera className="h-4 w-4 mr-2" />写真</TabsTrigger>
-                        <TabsTrigger value="voice"><Mic className="h-4 w-4 mr-2" />音声・テキスト</TabsTrigger>
+                        <TabsTrigger value="voice"><Mic className="h-4 w-4 mr-2" />音声・手入力</TabsTrigger>
                     </TabsList>
 
                     {/* PHOTO INPUT */}
                     <TabsContent value="photo" className="space-y-4">
+                        <div className="flex justify-end">
+                            <FavoriteSelector type="meal" onSelect={handleFavoriteSelect} />
+                        </div>
                         <div className="relative aspect-video w-full bg-slate-200 rounded-xl overflow-hidden shadow-inner flex items-center justify-center border-2 border-dashed border-slate-300">
                             {imagePreview ? (
                                 <Image src={imagePreview} alt="Preview" fill className="object-cover" />
@@ -411,6 +602,9 @@ export default function MealLogPage() {
 
                     {/* VOICE/TEXT INPUT */}
                     <TabsContent value="voice" className="space-y-4">
+                        <div className="flex justify-end">
+                            <FavoriteSelector type="meal" onSelect={handleFavoriteSelect} />
+                        </div>
                         <div className={`p-4 rounded-xl border-2 ${isListening ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'} transition-colors relative`}>
                             {/* Textarea for both Voice and Manual Input */}
                             <Textarea
@@ -484,7 +678,7 @@ export default function MealLogPage() {
                                             </span>
                                             <div className="flex items-center">
                                                 <span className="text-xs text-slate-400 mx-2 whitespace-nowrap">
-                                                    {new Date(draft.recorded_at).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                    {new Date(draft.recorded_at).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })}
                                                 </span>
                                                 <Button size="icon" variant="ghost" className="h-6 w-6 text-slate-300 hover:text-red-500 hover:bg-red-50" onClick={(e) => deleteDraft(e, draft.id)}>
                                                     <X className="h-3 w-3" />
@@ -514,18 +708,28 @@ export default function MealLogPage() {
                             <div className="space-y-4">
                                 {mealItems.map((item, index) => (
                                     <Card key={index} className="overflow-hidden bg-rose-50 border-rose-100/50 shadow-sm relative">
-                                        <Button
-                                            variant="ghost" size="icon"
-                                            className="absolute top-2 right-2 bg-white text-slate-400 shadow-sm hover:text-red-500 hover:bg-red-50 z-10"
-                                            onClick={() => removeItem(index)}
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button>
+                                        <div className="absolute top-2 right-2 flex gap-2 z-10">
+                                            <Button
+                                                variant="ghost"
+                                                className="bg-white text-yellow-500 shadow-sm hover:text-yellow-600 hover:bg-yellow-50 h-8 px-3 text-xs font-bold gap-1"
+                                                onClick={() => handleSaveSingleFavorite(index)}
+                                            >
+                                                <Star className="h-3 w-3 fill-yellow-500" />
+                                                My Menuに登録
+                                            </Button>
+                                            <Button
+                                                variant="ghost" size="icon"
+                                                className="bg-white text-slate-400 shadow-sm hover:text-red-500 hover:bg-red-50 h-8 w-8"
+                                                onClick={() => removeItem(index)}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </div>
 
                                         <CardHeader className="pb-2 pt-4 px-4 bg-rose-100/30">
-                                            <CardTitle className="text-base font-bold text-slate-800 pr-8 flex items-center gap-2">
+                                            <CardTitle className="text-base font-bold text-slate-800 pr-32 flex items-center gap-2">
                                                 <span className="text-2xl">{item.emoji || "🍽️"}</span>
-                                                {item.name}
+                                                <span className="truncate">{item.name}</span>
                                             </CardTitle>
                                         </CardHeader>
                                         <CardContent className="px-4 pb-4 space-y-4 pt-3">
@@ -558,7 +762,9 @@ export default function MealLogPage() {
                             </div>
 
                             {/* Save Button */}
-                            <div className="sticky bottom-4 z-20">
+                            <div className="sticky bottom-4 z-20 space-y-3">
+                                {/* Removed bulk favorite checkbox */}
+
                                 <Button
                                     className="w-full h-14 text-lg shadow-xl bg-rose-600 hover:bg-rose-700 rounded-xl text-white"
                                     onClick={handleSave} disabled={isSaving}
@@ -588,5 +794,13 @@ export default function MealLogPage() {
                 </AlertDialog>
             </main >
         </div >
+    );
+}
+
+export default function MealLogPage() {
+    return (
+        <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-rose-600" /></div>}>
+            <MealLogContent />
+        </Suspense>
     );
 }

@@ -6,36 +6,68 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Save, Bluetooth, Loader2, Trash2, X, Calculator, ChevronLeft, Activity } from 'lucide-react';
+import { Save, Bluetooth, Loader2, Activity } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from "sonner";
 import { useWeightScale } from '@/hooks/useWeightScale';
+import { LogPageHeader } from "@/components/log";
 import { format, differenceInYears } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
+
+/**
+ * 健康ログの型定義
+ * 体重・体組成データを保持する
+ */
 type HealthLog = {
+    /** レコードID */
     id: string;
+    /** 体重 (kg) */
     weight_kg: number;
+    /** 体脂肪率 (%) */
     body_fat_percentage?: number;
+    /** 筋肉量 (kg) */
     muscle_mass_kg?: number;
+    /** 内臓脂肪レベル */
     visceral_fat_rating?: number;
+    /** 基礎代謝量 (kcal) */
     basal_metabolic_rate?: number;
+    /** 体水分率 (%) */
     body_water_percentage?: number;
+    /** 骨量 (kg) */
     bone_mass_kg?: number;
+    /** タンパク質率 (%) */
     protein_percentage?: number;
+    /** 体内年齢 (歳) */
     metabolic_age?: number;
+    /** 除脂肪体重 (kg) */
     lean_body_mass_kg?: number;
+    /** 記録日時 */
     recorded_at: string;
+    /** データ取得元 */
     source: string;
 };
 
+/**
+ * ユーザープロフィールの型定義
+ * 体組成計算に必要な情報を保持
+ */
 type Profile = {
+    /** 身長 (cm) */
     height_cm?: number;
+    /** 生年月日 (YYYY-MM-DD) */
     birth_date?: string;
+    /** 性別 */
     gender?: 'male' | 'female';
 }
 
+/**
+ * 体重記録ページコンポーネント
+ *
+ * Bluetooth体重計連携または手入力で体重を記録。
+ * プロフィールから身長・年齢・性別を取得し、
+ * 体組成データ10項目を自動推定する。
+ */
 export default function WeightLogPage() {
     const router = useRouter();
     const supabase = createClient();
@@ -72,6 +104,9 @@ export default function WeightLogPage() {
         fetchData();
     }, []);
 
+    /**
+     * ログ履歴とプロフィールを取得する
+     */
     const fetchData = async () => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
@@ -91,6 +126,22 @@ export default function WeightLogPage() {
         if (logs) setLogsHistory(logs);
     };
 
+    /**
+     * 体重から体組成データを推定する
+     *
+     * 身長・年齢・性別を元に、以下の10項目を計算:
+     * - 体脂肪率 (Deurenberg式)
+     * - 基礎代謝量 (Mifflin-St Jeor式)
+     * - 除脂肪体重 (LBM)
+     * - 筋肉量
+     * - 骨量
+     * - 体水分率
+     * - 内臓脂肪レベル
+     * - タンパク質率
+     * - 体内年齢
+     *
+     * @param w - 体重 (kg)
+     */
     const calculateMetrics = (w: number) => {
         if (!profile || !profile.height_cm || !profile.birth_date || !profile.gender) return;
 
@@ -162,7 +213,6 @@ export default function WeightLogPage() {
         // Better: MetAge = Age * (AvgBMR / RealBMR)
         // AvgBMR (Mass based) ~= 22 * LBM if simple
         const metaAge = age * ((isMale ? 1500 : 1200) / bmrCalc); // Very rough
-        const constrainedMetaAge = Math.min(Math.max(18, Math.round(metaAge)), 80);
         // Actually lets just output a slightly optimistic age if Muscle > Avg
         const ageDiff = (bmi > 22 && bf < 20) ? -5 : (bmi > 25 ? 5 : 0);
         const finalMetAge = Math.max(18, age + ageDiff);
@@ -182,6 +232,9 @@ export default function WeightLogPage() {
         toast.info("全10項目の体組成データを推定しました");
     };
 
+    /**
+     * 体重・体組成データをデータベースに保存する
+     */
     const handleSave = async () => {
         if (!weight) {
             toast.error("体重を入力してください");
@@ -217,7 +270,7 @@ export default function WeightLogPage() {
             await supabase.from('profiles').update({ updated_at: new Date().toISOString() }).eq('id', user.id);
 
             toast.success("記録しました");
-            router.push('/dashboard');
+            router.push('/dashboard?refresh=1');
         } catch (e: any) {
             console.error('Save Error Details:', JSON.stringify(e, null, 2));
             toast.error(`保存に失敗しました: ${e.message || e.error_description || 'Unknown error'}`);
@@ -228,16 +281,13 @@ export default function WeightLogPage() {
 
     return (
         <div className="min-h-screen bg-slate-50 pb-safe">
-            <div className="px-6 py-4 bg-indigo-50 border-b border-indigo-100 shadow-sm flex items-center justify-between sticky top-0 z-10">
-                <Button variant="ghost" size="icon" onClick={() => router.back()} className="-ml-2 hover:bg-indigo-100 text-indigo-900">
-                    <ChevronLeft className="h-6 w-6" />
-                </Button>
-                <h1 className="font-bold text-xl text-indigo-900 flex items-center gap-2">
-                    <Activity className="h-5 w-5" />
-                    体重を記録
-                </h1>
-                <div className="w-10" />
-            </div>
+            <LogPageHeader
+                title="体重を記録"
+                icon={Activity}
+                bgColor="bg-indigo-50"
+                borderColor="border-indigo-100"
+                textColor="text-indigo-900"
+            />
 
             <main className="p-4 space-y-6">
                 <Card className="bg-white border-indigo-200 border-dashed shadow-sm overflow-hidden">

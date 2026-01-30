@@ -1,9 +1,13 @@
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-const fs = require('fs');
-const path = require('path');
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 try {
-    const envConfig = fs.readFileSync(path.resolve('.env.local'), 'utf-8');
+    const envConfig = fs.readFileSync(path.resolve(__dirname, '../.env.local'), 'utf-8');
     envConfig.split('\n').forEach(line => {
         const [key, value] = line.split('=');
         if (key && value) {

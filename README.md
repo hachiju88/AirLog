@@ -9,12 +9,21 @@
 ## 🚀 Features
 - **AI Vision Log**: 食事写真をアップロードして料理名・カロリー・PFC（タンパク質・脂質・炭水化物）を自動解析。Gemini 2.0 Flashを活用し、高精度な栄養推定を実現。
 - **Voice Activity Log**: 「腕立てを20回やった」などの発話をWeb Speech APIで認識し、自動で運動記録として保存。Geminiによる自然言語解析で消費カロリーも推定。
+- **Swipe Gesture Navigation**: 全タブで左右スワイプによる直感的なナビゲーションをサポート。ダッシュボードの日付切り替え、レポート画面のタブ切り替えなどがスワイプで操作可能。
 - **Smart Analytics**: 
-  - 体重、摂取/消費カロリーの推移をグラフで可視化。
+  - 体重、摂取/消費カロリーの推移を直感的なグラフで可視化（Recharts採用）。
+  - 月/年単位の長期トレンドも見やすいスケーラブルなUI。
   - 具体的な数値ラベルと詳細履歴リストで、日々の努力を一目で確認可能。
+- **My Menu (Favorites)**:
+  - よく食べる食事や決まったトレーニングを「My Menu」に登録し、ワンタップで呼び出し可能。
+  - 記録の習慣化を強力にサポート。
 - **AI Praise Partner**: 
   - 毎日の記録内容（食事名や運動種目）を具体的に引用して、AIがパーソナライズされた褒め言葉やフィードバックを提供。
   - ランチの内容やランニングの努力を見逃さず、ポジティブにサポート。
+  - 記録操作後は必ずAI評価を再生成し、最新のフィードバックを表示。
+- **Dashboard Log Management**:
+  - ダッシュボードから食事・運動記録を直接削除可能。
+  - 3日分のデータを先読みし、スワイプで即座に日付切り替え。
 - **Bluetooth Link**: Web Bluetooth APIを利用し、対応する体重計から体重データを取得可能 (Experimental / Paired with Chocozap CM3-HM).
 - **Seed Data Generator**: 設定画面からワンクリックで過去30日分のリアルなテストデータを生成し、アプリの使用感を即座に確認可能。
 
@@ -25,6 +34,11 @@
 - **UI**: Tailwind CSS v4, shadcn/ui, Recharts
 - **PWA**: Supported (@ducanh2912/next-pwa)
 - **AI**: Gemini 2.0 Flash (via Google AI Studio)
+- **Custom Hooks**: 
+  - `useVoiceRecognition` - Web Speech API音声認識
+  - `useSwipeGesture` - タッチスワイプ検知
+  - `useWeightScale` - Bluetooth体重計連携
+  - `useDraft` - 下書き保存機能
 
 ## 🏁 Getting Started
 
@@ -56,3 +70,6 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+## ☁️ Deployment
+Detailed instructions for deploying to **Google Cloud Run** using Docker are available in [DEPLOY.md](./DEPLOY.md).

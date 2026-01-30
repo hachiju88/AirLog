@@ -9,9 +9,15 @@
 ### A. シームレスなデータ入力
 *   **AI Vision Log**: 食事写真を自動解析（Gemini 2.0 Flash）。料理名・カロリー・PFCを高精度に推定。
 *   **Voice Activity Log**: 音声入力による運動記録。自然言語解析で消費カロリーも自動算出。
+*   **Swipe Gesture Navigation**: 全タブで左右スワイプによる直感的な画面切り替え。
+    *   ダッシュボード日付ナビ、レポートタブ、記録入力タブなど対応。
+    *   `useSwipeGesture`フックによるネイティブTouch API実装。
 *   **Smart Analytics**:
     *   **Numeric Display**: グラフ上の数値ラベル表示により、一目で値を把握。
     *   **Detailed History**: グラフと連動した詳細履歴リスト表示。
+*   **My Menu (Favorites)**:
+    *   頻繁な食事・運動メニューを「お気に入り」として保存・呼び出し。
+    *   タブ切り替えによりスムーズに履歴から入力可能。
 *   **Bluetooth Link**: Web Bluetooth API (Chocozap CM3-HM対応 / Experimental)。
 *   **Seed Data Generator**: ワンクリックでテスト用データを生成し、検証を容易化。
 
@@ -47,6 +53,18 @@ CREATE TABLE profiles (
 );
 ```
 
+### Favorites (My Menu)
+よく使うメニューの登録。
+```sql
+CREATE TABLE favorites (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  type TEXT NOT NULL, -- 'meal', 'exercise'
+  name TEXT NOT NULL,
+  content JSONB NOT NULL -- 保存時のアイテムデータ
+);
+```
+
 ### Health Logs
 体重・体組成データ。
 ```sql
@@ -57,6 +75,14 @@ CREATE TABLE health_logs (
   weight_kg FLOAT NOT NULL,
   bmi FLOAT,
   body_fat_percentage FLOAT,
+  muscle_mass_kg FLOAT,
+  visceral_fat_rating FLOAT,
+  basal_metabolic_rate FLOAT,
+  body_water_percentage FLOAT,
+  bone_mass_kg FLOAT,
+  protein_percentage FLOAT,
+  metabolic_age INTEGER,
+  lean_body_mass_kg FLOAT,
   source TEXT DEFAULT 'manual' -- 'manual', 'bluetooth'
 );
 ```

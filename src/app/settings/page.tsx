@@ -6,22 +6,16 @@ import { createClient } from '@/lib/supabase/client';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { BottomNav } from "@/components/BottomNav";
-import { LogOut, Trash2 } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import { toast } from "sonner";
 import { ProfileAvatarUpload } from "./_components/ProfileAvatarUpload";
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-    AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { seedData } from "@/lib/seed";
 
+/**
+ * 設定ページコンポーネント
+ *
+ * ユーザープロフィールの編集・目標設定の変更・
+ * My Menu管理・ログアウトなどの機能を提供。
+ */
 export default function SettingsPage() {
     const router = useRouter();
     const supabase = createClient();
@@ -53,6 +47,12 @@ export default function SettingsPage() {
         fetchProfile();
     }, []);
 
+    /**
+     * プロフィールの特定フィールドを更新する
+     *
+     * @param key - 更新するフィールド名
+     * @param value - 新しい値
+     */
     const updateProfile = async (key: string, value: any) => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
@@ -70,6 +70,9 @@ export default function SettingsPage() {
         }
     };
 
+    /**
+     * ログアウトを実行しログインページへ移動
+     */
     const handleLogout = async () => {
         await supabase.auth.signOut();
         router.push('/login');
@@ -231,64 +234,7 @@ export default function SettingsPage() {
                             </Button>
                         </div>
 
-                        <div className="border-t pt-6">
-                            <h3 className="text-sm font-medium text-slate-500 mb-2">デバッグ・開発用</h3>
-                            <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                    <Button
-                                        variant="outline"
-                                        className="w-full flex items-center justify-center gap-2 text-red-600 border-red-200 hover:bg-red-50"
-                                    >
-                                        <Trash2 className="h-4 w-4" />
-                                        データをリセットして再開（Onboardingテスト用）
-                                    </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                        <AlertDialogTitle>本当にリセットしますか？</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                            プロフィールデータや目標設定がすべて削除され、初期状態（Onboarding画面）に戻ります。
-                                            <br />
-                                            ※この操作は取り消せません。
-                                        </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                        <AlertDialogCancel>キャンセル</AlertDialogCancel>
-                                        <AlertDialogAction
-                                            className="bg-red-600 hover:bg-red-700 text-white border-none"
-                                            onClick={async () => {
-                                                const { data: { user } } = await supabase.auth.getUser();
-                                                if (user) {
-                                                    await supabase.from('profiles').delete().eq('id', user.id);
-                                                    await supabase.auth.signOut();
-                                                    router.push('/login');
-                                                    router.refresh();
-                                                }
-                                            }}
-                                        >
-                                            リセットする
-                                        </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                </AlertDialogContent>
-                            </AlertDialog>
-                            <Button
-                                variant="outline"
-                                className="w-full mt-4 flex items-center justify-center gap-2 text-indigo-600 border-indigo-200 hover:bg-indigo-50"
-                                onClick={async () => {
-                                    const { data: { user } } = await supabase.auth.getUser();
-                                    if (user) {
-                                        toast.promise(seedData(supabase, user.id), {
-                                            loading: 'データ生成中...',
-                                            success: 'テストデータを生成しました',
-                                            error: '生成に失敗しました'
-                                        });
-                                        router.refresh();
-                                    }
-                                }}
-                            >
-                                テストデータを生成 (Seed)
-                            </Button>
-                        </div>
+
                     </CardContent>
                 </Card>
             </main>

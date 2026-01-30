@@ -1,25 +1,55 @@
 'use client';
 
 import { useEffect, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Sparkles, MessageCircleHeart } from "lucide-react";
 
+/**
+ * DashboardHeaderのProps型定義
+ */
 type DashboardHeaderProps = {
+    /** 今日のログデータ (体重・食事・運動) */
     initialData: any;
+    /** ユーザープロフィール */
     userProfile: {
         id: string;
         full_name: string | null;
         [key: string]: any;
     } | null;
+    /** 選択されている日付文字列 (YYYY-MM-DD) */
+    selectedDateStr: string;
+    /** 今日の日付文字列 (YYYY-MM-DD) - サーバーでJSTを使用して生成 */
+    todayStr: string;
 };
 
-export function DashboardHeader({ initialData, userProfile }: DashboardHeaderProps) {
+/**
+ * ダッシュボードヘッダーコンポーネント
+ *
+ * AIが生成した褒めコメントを表示。
+ * 今日のデータに基づいてパーソナライズされたフィードバックを生成。
+ * セッションストレージにキャッシュしてAPIコールを最小化。
+ */
+export function DashboardHeader({ initialData, userProfile, selectedDateStr, todayStr }: DashboardHeaderProps) {
+    const searchParams = useSearchParams();
+    const router = useRouter();
+    const shouldRefresh = searchParams.get('refresh') === '1';
+
     const [greeting, setGreeting] = useState(`こんにちは、${userProfile?.full_name || 'ゲスト'}さん 👋`);
     const [feedback, setFeedback] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
-    const [isAI, setIsAI] = useState(false);
+
+    // 文字列比較で今日かどうか判定（TZ問題を回避）
+    const isToday = selectedDateStr === todayStr;
 
     useEffect(() => {
+        /**
+         * AIフィードバックを取得する
+         * キャッシュがあれば再利用、なければAPIから取得
+         */
         const fetchFeedback = async () => {
+            /**
+             * ランダムなフォールバックメッセージを取得
+             */
             const getRandomFallback = () => {
                 const fallbackMessages = [
                     "今日も1日頑張りましょう！健康は毎日の積み重ねです✨",
@@ -30,7 +60,40 @@ export function DashboardHeader({ initialData, userProfile }: DashboardHeaderPro
                 return fallbackMessages[Math.floor(Math.random() * fallbackMessages.length)];
             };
 
+            // CACHE CHECK (Always check today's cache first)
+            // We want to show Today's feedback even if viewing past dates if available.
+            const CACHE_KEY = `airlog_ai_feedback_${userProfile?.id || 'guest'}_${todayStr}`;
+
+            const cachedData = sessionStorage.getItem(CACHE_KEY);
+
+            // refreshパラメータがある場合はキャッシュを無視
+            if (cachedData && !shouldRefresh) {
+                try {
+                    const parsed = JSON.parse(cachedData);
+                    if (parsed.greeting) setGreeting(parsed.greeting);
+                    if (parsed.feedback) setFeedback(parsed.feedback);
+                    return; // Use cache and skip API
+                } catch (e) {
+                    sessionStorage.removeItem(CACHE_KEY);
+                }
+            }
+
+            // refreshパラメータがある場合はキャッシュを削除してURLをクリーンに
+            if (shouldRefresh) {
+                sessionStorage.removeItem(CACHE_KEY);
+                // URLからrefreshパラメータを削除
+                router.replace('/dashboard', { scroll: false });
+            }
+
+            // If not today and no cache, do NOT run API (wrong context).
+            // Just show a generic greeting/fallback so the UI isn't empty.
+            if (!isToday) {
+                setFeedback(getRandomFallback());
+                return;
+            }
+
             // Check if there is data to analyze (at least one log)
+            // Even if we are viewing past, initialData here is TODAY's data for AI context.
             const hasData = (initialData.weight?.weight_kg) ||
                 (initialData.meals && initialData.meals.length > 0) ||
                 (initialData.exercises && initialData.exercises.length > 0);
@@ -53,16 +116,22 @@ export function DashboardHeader({ initialData, userProfile }: DashboardHeaderPro
 
                 if (res.ok) {
                     const data = await res.json();
-                    if (data.greeting) {
-                        setGreeting(data.greeting);
-                        setIsAI(true);
+
+                    // Update state
+                    if (data.greeting) setGreeting(data.greeting);
+                    if (data.feedback) setFeedback(data.feedback);
+                    else setFeedback(getRandomFallback());
+
+                    // SAVE TO CACHE
+                    if (data.greeting || data.feedback) {
+                        const cachePayload = {
+                            greeting: data.greeting,
+                            feedback: data.feedback,
+                            timestamp: Date.now()
+                        };
+                        sessionStorage.setItem(CACHE_KEY, JSON.stringify(cachePayload));
                     }
-                    if (data.feedback) {
-                        setFeedback(data.feedback);
-                    } else {
-                        // AI returned valid JSON but no feedback? fallback
-                        setFeedback(getRandomFallback());
-                    }
+
                 } else {
                     // API Error status
                     console.warn("AI API returned error status");
@@ -77,11 +146,11 @@ export function DashboardHeader({ initialData, userProfile }: DashboardHeaderPro
         };
 
         fetchFeedback();
-    }, [initialData, userProfile]);
+    }, [initialData, userProfile, isToday, shouldRefresh, router, todayStr]);
 
     return (
-        <header className="px-6 py-6 bg-gradient-to-r from-indigo-100 via-purple-100 to-pink-100 shadow-sm sticky top-0 z-10">
-            <div className="flex justify-between items-start">
+        <header className="px-6 pt-6 pb-4 bg-gradient-to-r from-indigo-100 via-purple-100 to-pink-100 shadow-sm sticky top-0 z-10">
+            <div className="flex justify-between items-start mb-1">
                 <div className="flex-1">
                     <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                         {greeting}

@@ -17,9 +17,15 @@ Dockerコンテナとしてビルドし、無料枠（Free Tier）を最大限�
 
 ```bash
 export PROJECT_ID="your-project-id" # ここをあなたのプロジェクトIDに変更
-export REGION="asia-northeast1" # 東京リージョン（お好みで変更可。us-central1等は無料枠が手厚い場合がありますが、レイテンシを考慮して東京推奨）
+export REGION="asia-northeast1" # 東京リージョン
 export SERVICE_NAME="airlog-app"
 ```
+
+> [!IMPORTANT]
+> **環境変数の設定**:
+> Cloud Runへのデプロイ時に、以下の環境変数を設定してください（コマンドライン引数 `--set-env-vars` またはコンソール画面から設定可能）。
+> *   `BASE_URL`: **必須**。デプロイ先のURL（例: `https://airlog-app-xyz.a.run.app`）。認証後のリダイレクト先を正しく解決するために必要です。（※ビルド時ではなく実行時に適用されるよう、`NEXT_PUBLIC_` プレフィックスのない `BASE_URL` を使用します）
+> *   `AI_REQUEST_MODE`: `true` (AI機能を使用する場合)
 
 プロジェクトを設定します。
 
@@ -38,10 +44,18 @@ gcloud artifacts repositories create airlog-repo \
     --location=$REGION \
     --description="Docker repository for AirLog"
 
-# ビルドとプッシュ
-gcloud builds submit --tag $REGION-docker.pkg.dev/$PROJECT_ID/airlog-repo/$SERVICE_NAME:latest .
+# ビルドとプッシュ（Cloud Build 設定ファイルを使用）
+# Supabaseの環境変数をビルド時に埋め込むため、cloudbuild.yaml を使用します。
+
+# 環境変数の設定 (実際の値に置き換えてください)
+export SUPABASE_URL="your-supabase-url"
+export SUPABASE_KEY="your-supabase-anon-key"
+
+gcloud builds submit --config cloudbuild.yaml \
+    --substitutions=_SUPABASE_URL="$SUPABASE_URL",_SUPABASE_KEY="$SUPABASE_KEY"
 ```
-※ `gcloud builds submit` はローカルにDockerがなくてもクラウド上でビルドを行えます。
+※ `cloudbuild.yaml` 内で `_REGION` や `_SERVICE_NAME` も定義されています。必要に応じてファイル内または `--substitutions` で上書き可能です。
+
 
 ### 3. Cloud Run へのデプロイ（コスト最適化設定）
 
@@ -81,3 +95,27 @@ gcloud run deploy $SERVICE_NAME \
 ## PWAの確認
 
 Android端末のChromeでアクセスし、「ホーム画面に追加」プロンプトが表示されるか、またはメニューから「アプリをインストール」が可能かを確認してください。
+
+
+## デプロイコマンド実例 (Reference)
+
+実際にデプロイに成功したコマンドのテンプレートです。環境変数などを置き換えて使用してください。
+
+### 1. ビルド & プッシュ
+```bash
+gcloud builds submit . \
+  --config=cloudbuild.yaml \
+  --substitutions=_REGION="$REGION",_SERVICE_NAME="$SERVICE_NAME",_SUPABASE_URL="[YOUR_SUPABASE_URL]",_SUPABASE_KEY="[YOUR_SUPABASE_KEY]"
+```
+
+### 2. Cloud Run デプロイ
+```bash
+gcloud run deploy airlog-app \
+    --image asia-northeast1-docker.pkg.dev/[PROJECT_ID]/airlog-repo/airlog-app:latest \
+    --region asia-northeast1 \
+    --allow-unauthenticated \
+    --min-instances 0 \
+    --max-instances 1 \
+    --port 3000 \
+    --update-env-vars BASE_URL="https://[YOUR_APP_URL].run.app",AI_REQUEST_MODE="true",NEXT_PUBLIC_SUPABASE_URL="[YOUR_SUPABASE_URL]",NEXT_PUBLIC_SUPABASE_ANON_KEY="[YOUR_SUPABASE_KEY]",GEMINI_API_KEY="[YOUR_GEMINI_API_KEY]"
+```

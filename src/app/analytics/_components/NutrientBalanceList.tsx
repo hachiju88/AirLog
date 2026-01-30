@@ -25,17 +25,20 @@ export function NutrientBalanceList({ data, periodLabel }: { data: NutrientData,
         const percent = (value / target) * 100;
         let indicatorColor = colorClass;
 
-        if (isLimitType) {
-            if (percent > 120) indicatorColor = "bg-red-500";
-            else if (percent > 100) indicatorColor = "bg-orange-500";
-            else indicatorColor = colorClass; // default color
+        if (isLimitType && percent > 100) {
+            indicatorColor = "bg-red-500";
         }
 
         return (
             <div className="space-y-1">
                 <div className="flex justify-between text-xs">
-                    <span className="font-medium text-slate-700">{label}</span>
-                    <span className="text-slate-500">
+                    <div className="font-medium text-slate-700 flex items-center gap-2">
+                        {label}
+                        {isLimitType && percent > 100 && (
+                            <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">Over</span>
+                        )}
+                    </div>
+                    <span className={isLimitType && percent > 100 ? "font-bold text-red-600" : "text-slate-500"}>
                         {value.toFixed(1)} <span className="text-[10px] opacity-70">/ {target}g</span>
                     </span>
                 </div>

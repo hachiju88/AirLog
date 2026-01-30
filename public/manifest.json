@@ -19,5 +19,43 @@
             "type": "image/png",
             "purpose": "any maskable"
         }
+    ],
+    "shortcuts": [
+        {
+            "name": "食事を記録",
+            "short_name": "食事記録",
+            "description": "食事の写真を撮るか入力します",
+            "url": "/log/meal",
+            "icons": [
+                {
+                    "src": "/icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        },
+        {
+            "name": "運動を記録",
+            "short_name": "運動記録",
+            "description": "運動内容を記録します",
+            "url": "/log/exercise",
+            "icons": [
+                {
+                    "src": "/icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        },
+        {
+            "name": "体重を記録",
+            "short_name": "体重記録",
+            "description": "体重データを記録します",
+            "url": "/log/weight",
+            "icons": [
+                {
+                    "src": "/icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        }
     ]
 }
