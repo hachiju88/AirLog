@@ -19,7 +19,7 @@ export default async function AnalyticsPage({
 
     const params = await searchParams;
     const period = params.period || 'week'; // day, week, month, year
-    const activeTab = params.tab || 'weight'; // weight, meal, exercise
+    const activeTab = params.tab || 'weight'; // weight, meal, exercise, smoking
 
     // --- Date Calculations (JST) ---
     // Start "Today" based on JST
@@ -39,6 +39,8 @@ export default async function AnalyticsPage({
         startDate.setDate(todayJST.getDate() - 29); // Last 30 days
     } else if (period === 'year') {
         startDate.setFullYear(todayJST.getFullYear() - 1); // Last 1 year
+    } else if (period === '5years') {
+        startDate.setFullYear(todayJST.getFullYear() - 5); // Last 5 years
     } else {
         // Default 'week'
         startDate.setDate(todayJST.getDate() - 6); // Last 7 days
@@ -59,6 +61,10 @@ export default async function AnalyticsPage({
     const targetIntake = profile?.target_calories_intake || 2200;
     const targetBurned = profile?.target_calories_burned || 300;
     const targetWeight = profile?.target_weight_kg; // Might be undefined
+    const targetCigarettes = profile?.target_cigarettes_per_day || 10;
+    const pricePerCigarette = profile?.price_per_pack && profile?.cigarettes_per_pack
+        ? profile.price_per_pack / profile.cigarettes_per_pack
+        : 29;
 
     // 2. Health Logs (Weight)
     const { data: healthLogs } = await supabase
@@ -87,6 +93,25 @@ export default async function AnalyticsPage({
         .lte('recorded_at', endDate.toISOString())
         .order('recorded_at', { ascending: true });
 
+    // 5. Smoking Logs (喫煙者のみ)
+    let smokingLogs: any[] = [];
+    if (profile?.is_smoker) {
+        const { data: smoking } = await supabase
+            .from('smoking_logs')
+            .select('*')
+            .eq('user_id', user.id)
+            .gte('recorded_at', startDate.toISOString())
+            .lte('recorded_at', endDate.toISOString())
+            .order('recorded_at', { ascending: true });
+
+        if (smoking) {
+            smokingLogs = smoking.filter(log => {
+                const raw = log.ai_analysis_raw as any;
+                return raw?.status !== 'pending';
+            });
+        }
+    }
+
     // --- Aggregation Logic ---
 
     // Helper to get date string key (YYYY/MM/DD) in JST
@@ -107,7 +132,7 @@ export default async function AnalyticsPage({
         // Safety break
         let safety = 0;
 
-        while (current <= endDate && safety < 400) {
+        while (current <= endDate && safety < 2000) {
             dates.push(new Date(current));
             current.setDate(current.getDate() + 1);
             safety++;
@@ -158,16 +183,23 @@ export default async function AnalyticsPage({
         protein_percentage: bodyCompSum.protein / bodyCompCount,
     } : null;
 
+    let hasStarted = false;
     const weightTrend = dateRange.map(d => {
         const key = getDateKey(d.toISOString());
+        const weight = weightTrendMap.get(key);
+
+        if (weight !== undefined && weight !== null) {
+            hasStarted = true;
+            return { date: key, weight };
+        }
+
+        // Before first data => 0
+        // After first data => null (to connect line)
         return {
             date: key,
-            weight: weightTrendMap.get(key) || null
+            weight: hasStarted ? null : 0
         };
-    }).filter(d => period === 'year' ? d.weight !== null : true); // Filter gaps only for large periods? Or keep gaps for line chart?
-    // User requested "Line Chart". Gaps in line chart are handled by connectNulls or showing gaps. 
-    // Usually showing gaps is better for honest data, but for weight trend lines usually connect.
-    // Let's filter nulls for now to clean up, unless we use connectNulls.
+    });
 
     // --- Meal Data Prep ---
     const mealCalorieMap = new Map();
@@ -239,10 +271,47 @@ export default async function AnalyticsPage({
     const periodDays = dateRange.length || 1;
     const averageBurned = totalBurnedFromLogs / periodDays;
 
+    // --- Smoking Data Prep ---
+    const smokingCountMap = new Map();
+    let totalCigarettes = 0;
+    let totalSmokingSpent = 0;
+    let daysWithSmoking = new Set();
+
+    smokingLogs.forEach(log => {
+        const key = getDateKey(log.recorded_at);
+        const currentCount = smokingCountMap.get(key) || 0;
+        smokingCountMap.set(key, currentCount + (log.cigarette_count || 0));
+        daysWithSmoking.add(key);
+
+        totalCigarettes += (log.cigarette_count || 0);
+        const price = log.price_per_cigarette || pricePerCigarette;
+        totalSmokingSpent += (log.cigarette_count || 0) * price;
+    });
+
+    const smokingTrend = dateRange.map(d => {
+        const key = getDateKey(d.toISOString());
+        return {
+            date: key,
+            count: smokingCountMap.get(key) || 0
+        };
+    });
+
+    const smokingDivider = daysWithSmoking.size || 1;
+    const averageCigarettes = totalCigarettes / smokingDivider;
+    const averageSmokingSpent = totalSmokingSpent / smokingDivider;
+    const lifeConsumedMinutes = totalCigarettes * 5; // 1本=5分
+
+    const isSmokingTab = activeTab === 'smoking';
+
     return (
-        <div className="min-h-screen bg-slate-50 pb-24">
-            <header className="px-6 py-4 bg-gradient-to-r from-indigo-100 via-purple-100 to-pink-100 shadow-sm sticky top-0 z-10 flex items-center justify-between">
-                <h1 className="text-xl font-bold text-slate-800">レポート</h1>
+        <div className={`min-h-screen pb-24 ${isSmokingTab ? 'bg-slate-950' : 'bg-slate-50'}`}>
+            <header className={`px-6 py-4 ${isSmokingTab
+                ? 'bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-b border-slate-800'
+                : 'bg-gradient-to-r from-indigo-100 via-purple-100 to-pink-100'
+                } shadow-sm sticky top-0 z-10 flex items-center justify-between`}>
+                <h1 className={`text-xl font-bold ${isSmokingTab ? 'text-slate-100' : 'text-slate-800'}`}>
+                    レポート
+                </h1>
                 <Suspense fallback={<div className="h-8 w-32 bg-slate-200 rounded animate-pulse" />}>
                     <PeriodSelector currentPeriod={period} />
                 </Suspense>
@@ -270,7 +339,16 @@ export default async function AnalyticsPage({
                             average: averageBurned,
                             logs: exerciseLogs || []
                         }}
-
+                        smokingData={profile?.is_smoker ? {
+                            trend: smokingTrend,
+                            target: targetCigarettes,
+                            average: averageCigarettes,
+                            averageSpent: averageSmokingSpent,
+                            total: totalCigarettes,
+                            totalSpent: totalSmokingSpent,
+                            lifeConsumedMinutes: lifeConsumedMinutes
+                        } : undefined}
+                        isSmoker={profile?.is_smoker || false}
                     />
                 </Suspense>
             </main>
@@ -279,3 +357,4 @@ export default async function AnalyticsPage({
         </div>
     );
 }
+

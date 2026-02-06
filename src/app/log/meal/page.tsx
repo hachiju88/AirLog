@@ -415,6 +415,7 @@ function MealLogContent() {
         const draftText = searchParams.get('draft_text');
         const draftId = searchParams.get('draft_id');
         const dDate = searchParams.get('draft_date');
+        const editId = searchParams.get('edit');
         // const mode = searchParams.get('mode'); // Ignored, always voice/text
 
         if (draftId) {
@@ -427,6 +428,43 @@ function MealLogContent() {
         if (draftText) {
             setActiveTab('voice');
             setTextInput(draftText);
+        }
+
+        // 編集モード: DBからログを読み込んでフォームにセット
+        if (editId) {
+            const loadMealLog = async () => {
+                const supabase = createClient();
+                const { data: log, error } = await supabase
+                    .from('meal_logs')
+                    .select('*')
+                    .eq('id', editId)
+                    .single();
+
+                if (error || !log) {
+                    toast.error('ログの読み込みに失敗しました');
+                    return;
+                }
+
+                setEditingId(log.id);
+                setDraftDate(log.recorded_at);
+
+                // MealItemとして読み込み
+                const item: MealItem = {
+                    name: log.food_name,
+                    emoji: (log.ai_analysis_raw as any)?.emoji,
+                    calories: log.calories,
+                    protein: log.protein_g,
+                    fat: log.fat_g,
+                    carbs: log.carbohydrates_g,
+                    fiber: log.fiber_g,
+                    salt: log.salt_g,
+                    portion: 1.0
+                };
+                setMealItems([item]);
+                setActiveTab('voice');
+                toast.info('編集モードで読み込みました');
+            };
+            loadMealLog();
         }
     }, [searchParams]);
 

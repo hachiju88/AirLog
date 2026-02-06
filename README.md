@@ -24,6 +24,15 @@
 - **Dashboard Log Management**:
   - ダッシュボードから食事・運動記録を直接削除可能。
   - 3日分のデータを先読みし、スワイプで即座に日付切り替え。
+- **Smoking Management**:
+  - 毎日の喫煙本数を記録し、目標本数と比較可能。
+  - PWAショートカット機能により、アプリアイコン長押しで「1本吸った」を即座に記録。
+  - 禁煙・減煙の進捗をグラフで可視化。
+- **Quit Smoking Girlfriend (AI)**:
+  - 禁煙を支援する「少し厳しめ」なAIパートナー。
+  - 16種類の表情差分を持ち、会話内容に応じて動的に表情が変化。
+  - **Voice Output**: Web Speech APIにより、AIの応答を日本語で読み上げ。ブラウザ内のボイスを選択可能。
+  - ユーザーの喫煙欲をごまかさず、真正面から論破・叱咤激励する「Tough Love」スタイル。
 - **Bluetooth Link**: Web Bluetooth APIを利用し、対応する体重計から体重データを取得可能 (Experimental / Paired with Chocozap CM3-HM).
 - **Seed Data Generator**: 設定画面からワンクリックで過去30日分のリアルなテストデータを生成し、アプリの使用感を即座に確認可能。
 
@@ -32,13 +41,14 @@
 - **Language**: TypeScript
 - **State/Data**: Supabase (Auth, DB, Realtime)
 - **UI**: Tailwind CSS v4, shadcn/ui, Recharts
-- **PWA**: Supported (@ducanh2912/next-pwa)
+- **PWA**: Supported (@ducanh2912/next-pwa) - Shortcuts implemented
 - **AI**: Gemini 2.0 Flash (via Google AI Studio)
 - **Custom Hooks**: 
   - `useVoiceRecognition` - Web Speech API音声認識
   - `useSwipeGesture` - タッチスワイプ検知
   - `useWeightScale` - Bluetooth体重計連携
   - `useDraft` - 下書き保存機能
+
 
 ## 🏁 Getting Started
 

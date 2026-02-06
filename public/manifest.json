@@ -22,6 +22,30 @@
     ],
     "shortcuts": [
         {
+            "name": "1本吸った",
+            "short_name": "1本記録",
+            "description": "1本の喫煙を即座に記録します",
+            "url": "/api/quick-smoke?redirect=1",
+            "icons": [
+                {
+                    "src": "/icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        },
+        {
+            "name": "喫煙を記録",
+            "short_name": "喫煙記録",
+            "description": "喫煙本数を記録します",
+            "url": "/log/smoking",
+            "icons": [
+                {
+                    "src": "/icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        },
+        {
             "name": "食事を記録",
             "short_name": "食事記録",
             "description": "食事の写真を撮るか入力します",
@@ -38,18 +62,6 @@
             "short_name": "運動記録",
             "description": "運動内容を記録します",
             "url": "/log/exercise",
-            "icons": [
-                {
-                    "src": "/icon-192.png",
-                    "sizes": "192x192"
-                }
-            ]
-        },
-        {
-            "name": "体重を記録",
-            "short_name": "体重記録",
-            "description": "体重データを記録します",
-            "url": "/log/weight",
             "icons": [
                 {
                     "src": "/icon-192.png",

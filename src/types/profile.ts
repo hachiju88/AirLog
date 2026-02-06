@@ -35,4 +35,14 @@ export type Profile = {
     created_at?: string;
     /** 更新日時 (ISO 8601形式) */
     updated_at?: string;
+    /** 喫煙者フラグ */
+    is_smoker?: boolean;
+    /** 設定銘柄名 */
+    cigarette_brand?: string;
+    /** 1箱あたりの本数 */
+    cigarettes_per_pack?: number;
+    /** 1箱あたりの価格 */
+    price_per_pack?: number;
+    /** 1日の目標本数 */
+    target_cigarettes_per_day?: number;
 };

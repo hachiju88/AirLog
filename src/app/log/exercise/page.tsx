@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Loader2, Mic, Check, X, StopCircle, Clock, Dumbbell, Repeat, Layers } from "lucide-react";
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { LogPageHeader } from "@/components/log";
@@ -103,6 +103,40 @@ function ExerciseLogContent() {
         };
         fetchDrafts();
     }, []);
+
+    // 編集パラメータを処理
+    const searchParams = useSearchParams();
+    useEffect(() => {
+        const editId = searchParams.get('edit');
+        if (editId) {
+            const loadExerciseLog = async () => {
+                const supabase = createClient();
+                const { data: log, error } = await supabase
+                    .from('exercise_logs')
+                    .select('*')
+                    .eq('id', editId)
+                    .single();
+
+                if (error || !log) {
+                    toast.error('ログの読み込みに失敗しました');
+                    return;
+                }
+
+                setEditingId(log.id);
+                setDraftDate(log.recorded_at);
+
+                // 手入力フォームに読み込み
+                setManualName(log.exercise_name || '');
+                setManualDuration(log.duration_minutes?.toString() || '');
+                setManualWeight(log.weight_kg?.toString() || '');
+                setManualReps(log.reps_per_set?.toString() || '');
+                setManualSets(log.sets?.toString() || '');
+                setActiveTab('manual');
+                toast.info('編集モードで読み込みました');
+            };
+            loadExerciseLog();
+        }
+    }, [searchParams]);
 
     /**
      * 下書きを読み込んでフォームに設定する
@@ -387,7 +421,19 @@ function ExerciseLogContent() {
                             <FavoriteSelector type="exercise" onSelect={handleFavoriteSelect} />
                         </div>
 
-                        <div className={`p-6 rounded-xl border-2 ${isListening ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'} transition-colors text-center relative`}>
+                        <div className={`p-4 rounded-xl border-2 ${isListening ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'} transition-colors relative`}>
+                            {/* Textarea for Voice Input (editable) */}
+                            <Textarea
+                                placeholder="例: ベンチプレス60kgを10回3セット"
+                                className="text-base p-2 min-h-[120px] bg-transparent border-none focus-visible:ring-0 resize-none"
+                                value={transcript + interimTranscript}
+                                onChange={(e) => {
+                                    setTranscript(e.target.value);
+                                    setInterimTranscript("");
+                                }}
+                                disabled={isListening}
+                            />
+
                             {/* Clear Button */}
                             {(transcript || interimTranscript) && !isListening && (
                                 <Button
@@ -399,21 +445,13 @@ function ExerciseLogContent() {
                                 </Button>
                             )}
 
-                            <div className="h-20 flex items-center justify-center">
-                                {isListening ? (
-                                    <div className="animate-pulse text-red-500 font-bold">聞き取り中...</div>
-                                ) : (
-                                    <div className="text-slate-400">マイクボタンを押して話す</div>
-                                )}
-                            </div>
-                            <div className="text-sm text-slate-700 min-h-[3rem] text-left p-2 bg-white/50 rounded">
-                                {(transcript || interimTranscript) ? (
-                                    <span>
-                                        {transcript}
-                                        <span className="text-slate-400">{interimTranscript}</span>
+                            {/* Voice Status Indicator */}
+                            <div className="h-8 flex items-center justify-end px-2">
+                                {isListening && (
+                                    <span className="animate-pulse text-red-500 text-xs font-bold flex items-center">
+                                        <div className="w-2 h-2 bg-red-500 rounded-full mr-2" />
+                                        聞き取り中...
                                     </span>
-                                ) : (
-                                    <span className="text-slate-400">「ベンチプレス60kgを10回3セット」のように話してください</span>
                                 )}
                             </div>
                         </div>

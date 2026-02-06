@@ -15,3 +15,5 @@ export * from './meal';
 export * from './health';
 export * from './favorite';
 export * from './profile';
+export * from './smoking';
+

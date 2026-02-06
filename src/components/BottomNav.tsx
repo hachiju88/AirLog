@@ -1,10 +1,12 @@
 'use client';
 
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Home, BarChart2, Settings, Plus, Utensils, Activity, Scale, Flame } from 'lucide-react';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { Home, BarChart2, Settings, Plus, Utensils, Activity, Scale, Flame, Cigarette } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { createClient } from '@/lib/supabase/client';
 import {
     Drawer,
     DrawerClose,
@@ -16,13 +18,40 @@ import {
     DrawerTrigger,
 } from "@/components/ui/drawer";
 
-export function BottomNav() {
+// ... imports
+
+function BottomNavContent() {
     const pathname = usePathname();
+    const searchParams = useSearchParams();
+    const [isSmoker, setIsSmoker] = useState(false);
+
+    useEffect(() => {
+        // ... existing useEffect
+        const fetchProfile = async () => {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                const { data } = await supabase
+                    .from('profiles')
+                    .select('is_smoker')
+                    .eq('id', user.id)
+                    .single();
+                setIsSmoker(data?.is_smoker || false);
+            }
+        };
+        fetchProfile();
+    }, []);
 
     const isActive = (path: string) => pathname === path;
+    const isSmokingTab = pathname === '/analytics' && searchParams.get('tab') === 'smoking';
 
     return (
-        <div className="fixed bottom-0 left-0 right-0 md:left-1/2 md:right-auto md:-translate-x-1/2 md:w-full md:max-w-2xl border-t border-white/50 bg-gradient-to-r from-indigo-100/95 via-purple-100/95 to-pink-100/95 backdrop-blur pb-safe z-50">
+        <div className={cn(
+            "fixed bottom-0 left-0 right-0 md:left-1/2 md:right-auto md:-translate-x-1/2 md:w-full md:max-w-2xl border-t backdrop-blur pb-safe z-50 transition-colors duration-300",
+            isSmokingTab
+                ? "border-slate-800 bg-gradient-to-r from-slate-900/95 via-slate-800/95 to-slate-900/95"
+                : "border-white/50 bg-gradient-to-r from-indigo-100/95 via-purple-100/95 to-pink-100/95"
+        )}>
             <div className="flex items-center justify-around h-16 w-full px-4">
                 {/* Home */}
                 <Link href="/dashboard" className="flex flex-col items-center gap-1">
@@ -31,13 +60,20 @@ export function BottomNav() {
                         size="icon"
                         className={cn(
                             "h-10 w-10 rounded-full",
-                            isActive('/dashboard') ? "text-indigo-600 bg-indigo-50" : "text-slate-400 hover:text-slate-600"
+                            isActive('/dashboard')
+                                ? "text-indigo-600 bg-indigo-50"
+                                : (isSmokingTab ? "text-slate-500 hover:text-slate-300" : "text-slate-400 hover:text-slate-600")
                         )}
                     >
                         <Home className="h-6 w-6" />
                         <span className="sr-only">ホーム</span>
                     </Button>
-                    <span className={cn("text-[10px] font-medium", isActive('/dashboard') ? "text-indigo-600" : "text-slate-400")}>
+                    <span className={cn(
+                        "text-[10px] font-medium",
+                        isActive('/dashboard')
+                            ? "text-indigo-600"
+                            : (isSmokingTab ? "text-slate-500" : "text-slate-400")
+                    )}>
                         ホーム
                     </span>
                 </Link>
@@ -85,6 +121,17 @@ export function BottomNav() {
                                             運動を記録
                                         </Link>
                                     </Button>
+                                    {/* 喫煙者のみ表示 */}
+                                    {isSmoker && (
+                                        <Button variant="outline" className="w-full justify-start h-16 text-lg font-medium hover:bg-slate-100 hover:text-slate-700 hover:border-slate-300" asChild>
+                                            <Link href="/log/smoking">
+                                                <div className="bg-slate-200 p-2 rounded-full mr-4">
+                                                    <Cigarette className="h-6 w-6 text-slate-600" />
+                                                </div>
+                                                喫煙を記録
+                                            </Link>
+                                        </Button>
+                                    )}
                                 </div>
                             </div>
                         </DrawerContent>
@@ -98,13 +145,20 @@ export function BottomNav() {
                         size="icon"
                         className={cn(
                             "h-10 w-10 rounded-full",
-                            isActive('/analytics') ? "text-indigo-600 bg-indigo-50" : "text-slate-400 hover:text-slate-600"
+                            isActive('/analytics')
+                                ? (isSmokingTab ? "text-indigo-400 bg-slate-800" : "text-indigo-600 bg-indigo-50")
+                                : (isSmokingTab ? "text-slate-500 hover:text-slate-300" : "text-slate-400 hover:text-slate-600")
                         )}
                     >
                         <BarChart2 className="h-6 w-6" />
                         <span className="sr-only">レポート</span>
                     </Button>
-                    <span className={cn("text-[10px] font-medium", isActive('/analytics') ? "text-indigo-600" : "text-slate-400")}>
+                    <span className={cn(
+                        "text-[10px] font-medium",
+                        isActive('/analytics')
+                            ? (isSmokingTab ? "text-indigo-400" : "text-indigo-600")
+                            : (isSmokingTab ? "text-slate-500" : "text-slate-400")
+                    )}>
                         レポート
                     </span>
                 </Link>
@@ -116,13 +170,20 @@ export function BottomNav() {
                         size="icon"
                         className={cn(
                             "h-10 w-10 rounded-full",
-                            isActive('/settings') ? "text-indigo-600 bg-indigo-50" : "text-slate-400 hover:text-slate-600"
+                            isActive('/settings')
+                                ? "text-indigo-600 bg-indigo-50" // Settings tab is separate page, won't be active with tab=smoking
+                                : (isSmokingTab ? "text-slate-500 hover:text-slate-300" : "text-slate-400 hover:text-slate-600")
                         )}
                     >
                         <Settings className="h-6 w-6" />
                         <span className="sr-only">設定</span>
                     </Button>
-                    <span className={cn("text-[10px] font-medium", isActive('/settings') ? "text-indigo-600" : "text-slate-400")}>
+                    <span className={cn(
+                        "text-[10px] font-medium",
+                        isActive('/settings')
+                            ? "text-indigo-600"
+                            : (isSmokingTab ? "text-slate-500" : "text-slate-400")
+                    )}>
                         設定
                     </span>
                 </Link>
@@ -130,3 +191,12 @@ export function BottomNav() {
         </div>
     );
 }
+
+export function BottomNav() {
+    return (
+        <Suspense fallback={null}>
+            <BottomNavContent />
+        </Suspense>
+    );
+}
+

@@ -25,14 +25,23 @@
 *   **目標達成トラッキング**: 摂取/消費カロリーの目標に対する進捗をリアルタイム表示。
 *   **PFCバランス可視化**: タンパク質・脂質・炭水化物の摂取バランスをバーチャート表示。
 
-### C. AI褒めパートナー
-*   **パーソナライズド・フィードバック**: 具体的な食事名や運動内容を引用し、Geminiがポジティブに称賛。
+### D. 禁煙サポート (Quit Smoking Support)
+*   **Smoking Log Management**:
+    *   **Dashboard Integration**: ダッシュボードの専用カードで本日の喫煙本数と残り本数（目標比）を確認。
+    *   **Quick Logging**:
+        *   スワイプメニューからの「1本記録」。
+        *   **PWA Shortcuts**: アプリアイコン長押しメニューから「1本吸った」を即座に記録。
+*   **Quit Smoking Girlfriend (AI)**:
+    *   **Character Persona**: 毒舌だが愛情もある「ツンデレ」キャラクター。ユーザーの禁煙を厳しく管理。
+    *   **Dynamic Expressions**: 会話内容や感情分析に基づき、16種類の表情（smug, angry, blushing等）を動的に切り替え。
+    *   **Voice Output**: Web Speech APIを利用したテキスト読み上げ。ブラウザ搭載の日本語ボイスを選択・保存可能。
+    *   **Context Awareness**: ユーザーの喫煙履歴（本数増加、目標超過など）を認識し、状況に合わせた叱咤激励メッセージを生成。
 
 ## 3. 技術仕様 (Technical Stack)
 *   **Framework**: Next.js 16 (App Router)
 *   **Styling**: Tailwind CSS v4 / shadcn/ui
 *   **Charts**: Recharts
-*   **PWA**: Supported (@ducanh2912/next-pwa)
+*   **PWA**: Supported (@ducanh2912/next-pwa) - Shortcuts & Manifest optimized
 *   **Backend**: Supabase (Auth, Database, Storage)
 *   **AI Models**: Gemini 2.0 Flash
 *   **Web APIs**: Web Bluetooth API, Web Speech API
@@ -40,7 +49,7 @@
 ## 4. データ構造・スキーマ (Database Schema)
 
 ### Profiles
-ユーザー基本情報。`auth.users`と1対1で紐づく。
+ユーザー基本情報。喫煙関連設定を追加。
 ```sql
 CREATE TABLE profiles (
   id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
@@ -49,7 +58,14 @@ CREATE TABLE profiles (
   birth_date DATE,
   gender TEXT,
   target_weight_kg FLOAT,
-  activity_level INTEGER DEFAULT 1 -- 1:低, 2:中, 3:高
+  activity_level INTEGER DEFAULT 1,
+  
+  -- Smoking settings
+  is_smoker BOOLEAN DEFAULT false,
+  cigarettes_per_day_target INTEGER,
+  cigarettes_per_pack INTEGER DEFAULT 20,
+  price_per_pack INTEGER,
+  currency TEXT DEFAULT 'JPY'
 );
 ```
 
@@ -121,5 +137,20 @@ CREATE TABLE exercise_logs (
 );
 ```
 
+### Smoking Logs
+喫煙記録。
+```sql
+CREATE TABLE smoking_logs (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  recorded_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()),
+  cigarette_count INTEGER DEFAULT 1,
+  price_per_cigarette FLOAT,
+  is_different_brand BOOLEAN DEFAULT false,
+  ai_analysis_raw JSONB -- AIによるコメントや分析など
+);
+```
+
 ## 5. Security
 *   **RLS (Row Level Security)**: 全テーブルに対して有効化。ユーザーは自身のデータのみ閲覧・操作可能とする。
+

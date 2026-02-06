@@ -11,6 +11,7 @@ import {
     ReferenceLine
 } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CustomXAxisTick } from './CustomXAxisTick';
 
 type CalorieData = {
     date: string;
@@ -26,7 +27,7 @@ export function MealCalorieChart({ data, target, period }: { data: CalorieData[]
         );
     }
 
-    const showDots = period !== 'month' && period !== 'year';
+    const showDots = period !== 'month' && period !== 'year' && period !== '5years';
 
     // Domain Calculation
     const values = data.map(d => d.calories);
@@ -43,18 +44,16 @@ export function MealCalorieChart({ data, target, period }: { data: CalorieData[]
             <CardContent>
                 <div className="h-[250px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={data} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                        <LineChart data={data} margin={{ top: 0, right: 10, left: 0, bottom: 0 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
                             <XAxis
                                 dataKey="date"
-                                tick={{ fontSize: 10, fill: '#94A3B8' }}
+                                tick={<CustomXAxisTick />}
                                 tickLine={false}
                                 axisLine={false}
-                                tickFormatter={(val) => {
-                                    const parts = val.split('/');
-                                    if (parts.length >= 3) return `${parts[1]}/${parts[2]}`;
-                                    return val;
-                                }}
+                                minTickGap={15}
+                                interval="preserveStartEnd"
+                                padding={{ left: 20, right: 20 }}
                             />
                             <YAxis
                                 domain={[0, maxDomain]}
@@ -83,6 +82,6 @@ export function MealCalorieChart({ data, target, period }: { data: CalorieData[]
                     目標: {target}kcal
                 </div>
             </CardContent>
-        </Card>
+        </Card >
     );
 }

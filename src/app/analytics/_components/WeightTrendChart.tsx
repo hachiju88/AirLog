@@ -12,6 +12,7 @@ import {
     ReferenceLine
 } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CustomXAxisTick } from './CustomXAxisTick';
 
 type WeightData = {
     date: string;
@@ -28,7 +29,7 @@ export function WeightTrendChart({ data, target, period }: { data: WeightData[],
         );
     }
 
-    const showDots = period !== 'month' && period !== 'year';
+    const showDots = period !== 'month' && period !== 'year' && period !== '5years';
 
     // Calculate Y-axis domain padding
     const weights = data.map(d => d.weight).filter(w => w !== null && w !== undefined);
@@ -52,23 +53,19 @@ export function WeightTrendChart({ data, target, period }: { data: WeightData[],
             <CardContent>
                 <div className="h-[250px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={data} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                        <LineChart data={data} margin={{ top: 0, right: 10, left: 0, bottom: 0 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
                             <XAxis
                                 dataKey="date"
-                                tick={{ fontSize: 10, fill: '#94A3B8' }}
+                                tick={<CustomXAxisTick />}
                                 tickLine={false}
                                 axisLine={false}
-                                minTickGap={30}
-                                tickFormatter={(val) => {
-                                    // YYYY/MM/DD -> MM/DD
-                                    const parts = val.split('/');
-                                    if (parts.length >= 3) return `${parts[1]}/${parts[2]}`;
-                                    return val;
-                                }}
+                                minTickGap={15}
+                                interval="preserveStartEnd"
+                                padding={{ left: 20, right: 20 }}
                             />
                             <YAxis
-                                domain={[minWeight, maxWeight]}
+                                domain={[0, maxWeight]}
                                 tick={{ fontSize: 10, fill: '#94A3B8' }}
                                 tickLine={false}
                                 axisLine={false}
@@ -102,7 +99,12 @@ export function WeightTrendChart({ data, target, period }: { data: WeightData[],
                         </LineChart>
                     </ResponsiveContainer>
                 </div>
+                {target && (
+                    <div className="text-right text-[10px] text-slate-400 mt-2 px-2">
+                        目標: {target}kg
+                    </div>
+                )}
             </CardContent>
-        </Card>
+        </Card >
     );
 }

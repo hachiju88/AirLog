@@ -6,7 +6,7 @@ import { DashboardClient } from "./_components/DashboardClient";
 /**
  * ダッシュボードページ (Server Component)
  *
- * 食事・運動・体重の日別サマリーを表示。
+ * 食事・運動・体重・喫煙の日別サマリーを表示。
  * 3日分のデータを先読みし、クライアント側で即座に切り替え可能。
  */
 export default async function DashboardPage() {
@@ -112,10 +112,30 @@ export default async function DashboardPage() {
             });
         }
 
+        // Fetch Smoking Logs (喫煙者のみ)
+        let smokingLogs: any[] = [];
+        if (profile?.is_smoker) {
+            const { data: smoking } = await supabase
+                .from('smoking_logs')
+                .select('*')
+                .eq('user_id', user.id)
+                .gte('recorded_at', start.toISOString())
+                .lt('recorded_at', end.toISOString())
+                .order('recorded_at', { ascending: true });
+
+            if (smoking) {
+                smokingLogs = smoking.filter(log => {
+                    const raw = log.ai_analysis_raw as any;
+                    return raw?.status !== 'pending';
+                });
+            }
+        }
+
         return {
             dateStr,
             meals: meals || [],
             exercises: exercises || [],
+            smokingLogs,
         };
     });
 
@@ -127,8 +147,26 @@ export default async function DashboardPage() {
         .select('*')
         .eq('user_id', user.id)
         .order('recorded_at', { ascending: false })
+        .order('recorded_at', { ascending: false })
         .limit(1)
         .single();
+
+    // Fetch Last Smoking Log (for streak calculation)
+    // Fetch Last Smoking Logs (for accurate streak calculation including past days)
+    // 過去3件取得（今日・昨日・一昨日の表示に必要な直近の履歴を取得するため）
+    let lastSmokeDates: string[] = [];
+    if (profile?.is_smoker) {
+        const { data: lastSmokes } = await supabase
+            .from('smoking_logs')
+            .select('recorded_at')
+            .eq('user_id', user.id)
+            .order('recorded_at', { ascending: false })
+            .limit(3);
+
+        if (lastSmokes) {
+            lastSmokeDates = lastSmokes.map(log => log.recorded_at);
+        }
+    }
 
     return (
         <div className="min-h-screen bg-slate-50 pb-24">
@@ -137,8 +175,10 @@ export default async function DashboardPage() {
                 latestWeightLog={latestWeightLog}
                 profile={profile}
                 todayStr={todayStr}
+                lastSmokeDates={lastSmokeDates}
             />
             <BottomNav />
         </div>
     );
 }
+
