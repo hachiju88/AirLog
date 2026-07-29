@@ -75,17 +75,31 @@ CREATE TABLE exercise_logs (
   ai_analysis_raw JSONB -- Raw JSON from Gemini (includes emoji)
 );
 
+-- 5. Movement Logs (Distance-based movement: walking/running)
+CREATE TABLE movement_logs (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  recorded_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()),
+  distance_km FLOAT NOT NULL,
+  movement_type TEXT, -- 'walking', 'running', 'mixed'
+  calories_burned FLOAT DEFAULT 0,
+  input_type TEXT DEFAULT 'manual', -- 'manual', 'voice'
+  ai_analysis_raw JSONB
+);
+
 -- Indexes for performance
 CREATE INDEX idx_favorites_user_type ON favorites (user_id, type);
 CREATE INDEX idx_health_logs_user_date ON health_logs (user_id, recorded_at DESC);
 CREATE INDEX idx_meal_logs_user_date ON meal_logs (user_id, recorded_at DESC);
 CREATE INDEX idx_exercise_logs_user_date ON exercise_logs (user_id, recorded_at DESC);
+CREATE INDEX idx_movement_logs_user_date ON movement_logs (user_id, recorded_at DESC);
 
 -- Row Level Security (RLS)
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE health_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE meal_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE exercise_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE movement_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE favorites ENABLE ROW LEVEL SECURITY;
 
 -- Policies
@@ -93,4 +107,5 @@ CREATE POLICY "Users can manage their own profile" ON profiles FOR ALL USING (au
 CREATE POLICY "Users can manage their own health logs" ON health_logs FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users can manage their own meal logs" ON meal_logs FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users can manage their own exercise logs" ON exercise_logs FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage their own movement logs" ON movement_logs FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users can manage their own favorites" ON favorites FOR ALL USING (auth.uid() = user_id);
