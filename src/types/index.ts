@@ -12,6 +12,7 @@
  */
 
 export * from './meal';
+export * from './movement';
 export * from './health';
 export * from './favorite';
 export * from './profile';

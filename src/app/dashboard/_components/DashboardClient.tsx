@@ -22,6 +22,7 @@ import { DeleteConfirmDialog } from "@/components/log/DeleteConfirmDialog";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { differenceInCalendarDays } from 'date-fns';
+import { MOVEMENT_TYPE_LABELS } from "@/types";
 
 // ===== 型定義 =====
 
@@ -32,6 +33,8 @@ interface DayData {
     meals: any[];
     /** 運動ログ */
     exercises: any[];
+    /** 移動ログ（距離ベース） */
+    movements?: any[];
     /** 喫煙ログ */
     smokingLogs?: any[];
 }
@@ -91,7 +94,7 @@ export function DashboardClient({ daysData: initialDaysData, latestWeightLog, pr
     const [selectedDayIndex, setSelectedDayIndex] = useState(0);
 
     // 削除ダイアログの状態
-    const [deleteTarget, setDeleteTarget] = useState<{ type: 'meal' | 'exercise'; id: string; name: string } | null>(null);
+    const [deleteTarget, setDeleteTarget] = useState<{ type: 'meal' | 'exercise' | 'movement'; id: string; name: string } | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
 
     // 展開中のカードID
@@ -152,7 +155,7 @@ export function DashboardClient({ daysData: initialDaysData, latestWeightLog, pr
     const targetProtein = Math.round((targetIntake * 0.15) / 4);
     const targetFat = Math.round((targetIntake * 0.25) / 9);
     const targetCarbs = Math.round((targetIntake * 0.60) / 4);
-    const targetFiber = 20;
+    const targetFiber = 21;
     const targetSalt = 7.5;
 
     // 喫煙関連の目標
@@ -165,9 +168,12 @@ export function DashboardClient({ daysData: initialDaysData, latestWeightLog, pr
     const totals = useMemo(() => {
         const meals = currentDay?.meals || [];
         const exercises = currentDay?.exercises || [];
+        const movements = currentDay?.movements || [];
         return {
             calories: meals.reduce((sum, log) => sum + (log.calories || 0), 0),
-            burned: exercises.reduce((sum, log) => sum + (log.calories_burned || 0), 0),
+            burned: exercises.reduce((sum, log) => sum + (log.calories_burned || 0), 0)
+                + movements.reduce((sum, log) => sum + (log.calories_burned || 0), 0),
+            distance: movements.reduce((sum, log) => sum + (log.distance_km || 0), 0),
             protein: meals.reduce((sum, log) => sum + (log.protein_g || 0), 0),
             fat: meals.reduce((sum, log) => sum + (log.fat_g || 0), 0),
             carbs: meals.reduce((sum, log) => sum + (log.carbohydrates_g || 0), 0),
@@ -193,6 +199,7 @@ export function DashboardClient({ daysData: initialDaysData, latestWeightLog, pr
     // ログのグループ化
     const mealGroups = useMemo(() => groupLogsBySlot(currentDay?.meals || []), [currentDay]);
     const exerciseGroups = useMemo(() => groupLogsBySlot(currentDay?.exercises || []), [currentDay]);
+    const movements = useMemo(() => currentDay?.movements || [], [currentDay]);
 
     // 日付ラベル
     const getDateLabel = (index: number) => {
@@ -209,7 +216,11 @@ export function DashboardClient({ daysData: initialDaysData, latestWeightLog, pr
         setIsDeleting(true);
         try {
             const supabase = createClient();
-            const table = deleteTarget.type === 'meal' ? 'meal_logs' : 'exercise_logs';
+            const table = deleteTarget.type === 'meal'
+                ? 'meal_logs'
+                : deleteTarget.type === 'movement'
+                    ? 'movement_logs'
+                    : 'exercise_logs';
 
             const { error } = await supabase
                 .from(table)
@@ -229,6 +240,9 @@ export function DashboardClient({ daysData: initialDaysData, latestWeightLog, pr
                     exercises: deleteTarget.type === 'exercise'
                         ? day.exercises.filter(e => e.id !== deleteTarget.id)
                         : day.exercises,
+                    movements: deleteTarget.type === 'movement'
+                        ? (day.movements || []).filter(m => m.id !== deleteTarget.id)
+                        : day.movements,
                 };
             }));
 
@@ -248,9 +262,13 @@ export function DashboardClient({ daysData: initialDaysData, latestWeightLog, pr
     };
 
     // 編集ハンドラー
-    const handleEdit = (type: 'meal' | 'exercise', logId: string) => {
+    const handleEdit = (type: 'meal' | 'exercise' | 'movement', logId: string) => {
         // ログページに遷移して編集
-        const path = type === 'meal' ? '/log/meal' : '/log/exercise';
+        const path = type === 'meal'
+            ? '/log/meal'
+            : type === 'movement'
+                ? '/log/movement'
+                : '/log/exercise';
         router.push(`${path}?edit=${logId}`);
     };
 
@@ -676,7 +694,7 @@ export function DashboardClient({ daysData: initialDaysData, latestWeightLog, pr
 
                     {/* Exercise Logs */}
                     <div>
-                        <h2 className="text-sm font-bold text-slate-500 mb-4">{getDateLabel(selectedDayIndex)}の運動</h2>
+                        <h2 className="text-sm font-bold text-slate-500 mb-4">{getDateLabel(selectedDayIndex)}の筋トレ</h2>
                         <div className="space-y-6">
                             {(currentDay?.exercises && currentDay.exercises.length > 0) ? (
                                 ['morning', 'afternoon', 'night'].map(slot => {
@@ -748,8 +766,70 @@ export function DashboardClient({ daysData: initialDaysData, latestWeightLog, pr
                                 })
                             ) : (
                                 <div className="p-8 text-center bg-white rounded-lg border border-dashed border-slate-300">
-                                    <p className="text-slate-400">まだ運動の記録がありません</p>
-                                    <p className="text-xs text-slate-400 mt-1">運動を記録してみましょう</p>
+                                    <p className="text-slate-400">まだ筋トレの記録がありません</p>
+                                    <p className="text-xs text-slate-400 mt-1">筋トレを記録してみましょう</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Movement Logs (移動: 距離ベース) */}
+                    <div>
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-sm font-bold text-slate-500">{getDateLabel(selectedDayIndex)}の移動</h2>
+                            {movements.length > 0 && (
+                                <span className="text-xs font-bold text-emerald-600">
+                                    合計 {totals.distance.toFixed(2)} km
+                                </span>
+                            )}
+                        </div>
+                        <div className="space-y-3">
+                            {movements.length > 0 ? (
+                                movements.map((log) => (
+                                    <div key={log.id} className="rounded-xl shadow-sm border bg-emerald-50 border-emerald-100 overflow-hidden transition-all duration-300">
+                                        <div
+                                            className="p-4 flex items-center gap-4 cursor-pointer active:bg-white/30 transition-colors"
+                                            onClick={() => handleCardTap(log.id)}
+                                        >
+                                            <div className="h-12 w-12 bg-white/60 rounded-lg flex items-center justify-center text-2xl">
+                                                {log.movement_type === 'running' ? '🏃' : '🚶'}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <h4 className="font-bold text-slate-900 truncate">
+                                                    {MOVEMENT_TYPE_LABELS[log.movement_type as keyof typeof MOVEMENT_TYPE_LABELS] || '移動'} {log.distance_km} km
+                                                </h4>
+                                                <p className="text-xs text-slate-500">
+                                                    {new Date(log.recorded_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })}
+                                                </p>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="font-bold text-slate-900">{log.calories_burned} kcal</div>
+                                                <div className="text-xs text-slate-400">{log.distance_km} km</div>
+                                            </div>
+                                            <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform duration-300 ${expandedCardId === log.id ? 'rotate-180' : ''}`} />
+                                        </div>
+                                        <div className={`grid grid-cols-2 gap-2 px-4 transition-all duration-300 ease-in-out ${expandedCardId === log.id ? 'max-h-20 pb-4 opacity-100' : 'max-h-0 pb-0 opacity-0 overflow-hidden'}`}>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleEdit('movement', log.id); }}
+                                                className="flex items-center justify-center gap-1.5 py-2 px-3 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors"
+                                            >
+                                                <Pencil className="h-4 w-4" />
+                                                <span>編集</span>
+                                            </button>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: 'movement', id: log.id, name: `${MOVEMENT_TYPE_LABELS[log.movement_type as keyof typeof MOVEMENT_TYPE_LABELS] || '移動'} ${log.distance_km}km` }); setExpandedCardId(null); }}
+                                                className="flex items-center justify-center gap-1.5 py-2 px-3 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-lg transition-colors"
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                                <span>削除</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="p-8 text-center bg-white rounded-lg border border-dashed border-slate-300">
+                                    <p className="text-slate-400">まだ移動の記録がありません</p>
+                                    <p className="text-xs text-slate-400 mt-1">移動を記録してみましょう</p>
                                 </div>
                             )}
                         </div>

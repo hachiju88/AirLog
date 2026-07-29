@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Home, BarChart2, Settings, Plus, Utensils, Activity, Scale, Flame, Cigarette } from 'lucide-react';
+import { Home, BarChart2, Settings, Plus, Utensils, Activity, Scale, Flame, Cigarette, Footprints } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/supabase/client';
@@ -119,6 +119,14 @@ function BottomNavContent() {
                                                 <Flame className="h-6 w-6 text-cyan-600" />
                                             </div>
                                             運動を記録
+                                        </Link>
+                                    </Button>
+                                    <Button variant="outline" className="w-full justify-start h-16 text-lg font-medium hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200" asChild>
+                                        <Link href="/log/movement">
+                                            <div className="bg-emerald-100 p-2 rounded-full mr-4">
+                                                <Footprints className="h-6 w-6 text-emerald-600" />
+                                            </div>
+                                            移動を記録
                                         </Link>
                                     </Button>
                                     {/* 喫煙者のみ表示 */}

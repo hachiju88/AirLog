@@ -112,6 +112,22 @@ export default async function DashboardPage() {
             });
         }
 
+        // Fetch Movement Logs (移動: 距離ベース)
+        let { data: movements } = await supabase
+            .from('movement_logs')
+            .select('*')
+            .eq('user_id', user.id)
+            .gte('recorded_at', start.toISOString())
+            .lt('recorded_at', end.toISOString())
+            .order('recorded_at', { ascending: true });
+
+        if (movements) {
+            movements = movements.filter(log => {
+                const raw = log.ai_analysis_raw as any;
+                return raw?.status !== 'pending';
+            });
+        }
+
         // Fetch Smoking Logs (喫煙者のみ)
         let smokingLogs: any[] = [];
         if (profile?.is_smoker) {
@@ -135,6 +151,7 @@ export default async function DashboardPage() {
             dateStr,
             meals: meals || [],
             exercises: exercises || [],
+            movements: movements || [],
             smokingLogs,
         };
     });

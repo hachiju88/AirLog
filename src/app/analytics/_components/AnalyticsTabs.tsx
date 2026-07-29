@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Activity, Utensils, Flame, Cigarette, Skull, Clock, TrendingDown } from "lucide-react";
+import { Activity, Utensils, Flame, Cigarette, Skull, Clock, TrendingDown, Footprints } from "lucide-react";
 import { useSwipeGesture } from "@/hooks/useSwipeGesture";
 import { useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,6 +41,13 @@ type AnalyticsTabsProps = {
         average: number;
         logs: any[];
     };
+    movementData: {
+        distance: any[];
+        total: number;
+        totalBurned: number;
+        monthlyNorm: number;
+        dailyNorm: number;
+    };
     smokingData?: SmokingData;
     isSmoker?: boolean;
 };
@@ -53,15 +60,17 @@ import { ExerciseCalorieChart } from "./ExerciseCalorieChart";
 
 import { ExerciseSummary } from "./ExerciseSummary";
 import { ExerciseHistoryList } from "./ExerciseHistoryList";
+import { MovementDistanceChart } from "./MovementDistanceChart";
+import { MovementSummary } from "./MovementSummary";
 import { SmokingTrendChart } from "./SmokingTrendChart";
 
-export function AnalyticsTabs({ currentTab, period, weightData, mealData, exerciseData, smokingData, isSmoker }: AnalyticsTabsProps) {
+export function AnalyticsTabs({ currentTab, period, weightData, mealData, exerciseData, movementData, smokingData, isSmoker }: AnalyticsTabsProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
 
     /** タブの順序定義 - 喫煙者の場合は喫煙タブを追加 */
     const TAB_ORDER = useMemo(() =>
-        isSmoker ? ['weight', 'meal', 'exercise', 'smoking'] : ['weight', 'meal', 'exercise'],
+        isSmoker ? ['weight', 'meal', 'exercise', 'movement', 'smoking'] : ['weight', 'meal', 'exercise', 'movement'],
         [isSmoker]
     );
 
@@ -121,8 +130,8 @@ export function AnalyticsTabs({ currentTab, period, weightData, mealData, exerci
         <div ref={swipeRef} className={`touch-pan-y ${isSmoking ? 'rounded-xl' : ''}`}>
             <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
                 <TabsList className={`
-                    grid w-full mb-6 
-                    ${isSmoker ? 'grid-cols-4' : 'grid-cols-3'} 
+                    grid w-full mb-6
+                    ${isSmoker ? 'grid-cols-5' : 'grid-cols-4'}
                     ${isSmoking ? 'bg-slate-800' : 'bg-slate-100/80'}
                 `}>
                     <TabsTrigger value="weight" className={`data-[state=active]:bg-indigo-600 data-[state=active]:text-white ${isSmoking ? '!text-slate-400 hover:!text-slate-200' : ''}`}>
@@ -132,7 +141,10 @@ export function AnalyticsTabs({ currentTab, period, weightData, mealData, exerci
                         <Utensils className="h-4 w-4 mr-2" /> 食事
                     </TabsTrigger>
                     <TabsTrigger value="exercise" className={`data-[state=active]:bg-cyan-500 data-[state=active]:text-white ${isSmoking ? '!text-slate-400 hover:!text-slate-200' : ''}`}>
-                        <Flame className="h-4 w-4 mr-2" /> 運動
+                        <Flame className="h-4 w-4 mr-2" /> 筋トレ
+                    </TabsTrigger>
+                    <TabsTrigger value="movement" className={`data-[state=active]:bg-emerald-500 data-[state=active]:text-white ${isSmoking ? '!text-slate-400 hover:!text-slate-200' : ''}`}>
+                        <Footprints className="h-4 w-4 mr-2" /> 移動
                     </TabsTrigger>
                     {isSmoker && (
                         <TabsTrigger value="smoking" className={`data-[state=active]:!bg-slate-700 data-[state=active]:!text-slate-100 ${isSmoking ? '!text-slate-400 hover:!text-slate-200' : ''}`}>
@@ -155,6 +167,11 @@ export function AnalyticsTabs({ currentTab, period, weightData, mealData, exerci
                     <ExerciseCalorieChart data={exerciseData.calories} target={exerciseData.target} period={period} />
                     <ExerciseSummary total={exerciseData.total} average={exerciseData.average} periodLabel={periodLabel} />
                     <ExerciseHistoryList logs={exerciseData.logs} />
+                </TabsContent>
+
+                <TabsContent value="movement" className="space-y-6 animate-in fade-in-50 slide-in-from-bottom-2">
+                    <MovementDistanceChart data={movementData.distance} dailyNorm={movementData.dailyNorm} period={period} />
+                    <MovementSummary total={movementData.total} totalBurned={movementData.totalBurned} monthlyNorm={movementData.monthlyNorm} periodLabel={periodLabel} />
                 </TabsContent>
 
                 {isSmoker && smokingData && (

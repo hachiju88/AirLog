@@ -93,6 +93,15 @@ export default async function AnalyticsPage({
         .lte('recorded_at', endDate.toISOString())
         .order('recorded_at', { ascending: true });
 
+    // 4.5 Movement Logs (移動: 距離ベース)
+    const { data: movementLogs } = await supabase
+        .from('movement_logs')
+        .select('*')
+        .eq('user_id', user.id)
+        .gte('recorded_at', startDate.toISOString())
+        .lte('recorded_at', endDate.toISOString())
+        .order('recorded_at', { ascending: true });
+
     // 5. Smoking Logs (喫煙者のみ)
     let smokingLogs: any[] = [];
     if (profile?.is_smoker) {
@@ -271,6 +280,35 @@ export default async function AnalyticsPage({
     const periodDays = dateRange.length || 1;
     const averageBurned = totalBurnedFromLogs / periodDays;
 
+    // --- Movement Data Prep ---
+    const movementDistanceMap = new Map();
+    let totalDistance = 0;
+    let totalMovementBurned = 0;
+
+    movementLogs?.forEach(log => {
+        const raw = log.ai_analysis_raw as any;
+        if (raw?.status === 'pending') return;
+
+        const key = getDateKey(log.recorded_at);
+        const currentDist = movementDistanceMap.get(key) || 0;
+        movementDistanceMap.set(key, currentDist + (log.distance_km || 0));
+        totalDistance += (log.distance_km || 0);
+        totalMovementBurned += (log.calories_burned || 0);
+    });
+
+    const movementDistance = dateRange.map(d => {
+        const key = getDateKey(d.toISOString());
+        return {
+            date: key,
+            distance: movementDistanceMap.get(key) || 0
+        };
+    });
+
+    // 月次移動ノルマ: 2026年6月は 60km、7月以降は 100km（指示書 4）
+    const movementMonthlyNorm = (todayJST.getFullYear() === 2026 && todayJST.getMonth() === 5) ? 60 : 100;
+    // 表示期間の日数に応じた目安ライン（月ノルマを1日あたりに換算 → 期間分）
+    const movementDailyNorm = movementMonthlyNorm / 30;
+
     // --- Smoking Data Prep ---
     const smokingCountMap = new Map();
     let totalCigarettes = 0;
@@ -338,6 +376,13 @@ export default async function AnalyticsPage({
                             total: totalBurnedFromLogs,
                             average: averageBurned,
                             logs: exerciseLogs || []
+                        }}
+                        movementData={{
+                            distance: movementDistance,
+                            total: totalDistance,
+                            totalBurned: totalMovementBurned,
+                            monthlyNorm: movementMonthlyNorm,
+                            dailyNorm: movementDailyNorm
                         }}
                         smokingData={profile?.is_smoker ? {
                             trend: smokingTrend,
